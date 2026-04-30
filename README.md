@@ -45,7 +45,7 @@ Important notes:
 - The `automatic-reboot`, `docker-nightly-restart`, and `firewall-baseline` tasks are disabled in the default full run.
 - When `automatic-reboot` is enabled, it defaults to a daily check at `03:30` with up to `30m` randomized delay and reboots only if `/var/run/reboot-required` exists.
 - When `docker-nightly-restart` is enabled, it defaults to a daily restart window at `04:30` with up to `30m` randomized delay and restarts Docker only when `docker.service` is installed and active.
-- The `timezone-locale` task still defaults to **`Europe/Berlin`**, **`de_DE.UTF-8`**, and a **German QWERTZ** keyboard layout, but those values can be changed via CLI flags or global config.
+- The `timezone-locale` task still defaults to **`Europe/Berlin`**, **`en_US.UTF-8`**, and a **German QWERTZ** keyboard layout, but those values can be changed via CLI flags or global config.
 - A dry run still needs to run on Linux, but it skips privileged writes.
 
 ## Quick start on Linux
@@ -194,10 +194,10 @@ sudo prep-my-server --set-config automatic-reboot.on-calendar 'Sat *-*-* 04:00:0
 # Change the nightly Docker restart schedule for future default runs.
 sudo prep-my-server --set-config docker-nightly-restart.on-calendar '*-*-* 04:30:00'
 
-# Use US locale defaults too.
-sudo prep-my-server --set-config timezone-locale.locale en_US.UTF-8
-sudo prep-my-server --set-config timezone-locale.language en_US:en
-sudo prep-my-server --set-config timezone-locale.lc-time en_US.UTF-8
+# Use German locale defaults instead.
+sudo prep-my-server --set-config timezone-locale.locale de_DE.UTF-8
+sudo prep-my-server --set-config timezone-locale.language de_DE:de
+sudo prep-my-server --set-config timezone-locale.lc-time de_DE.UTF-8
 
 # Return one value to the built-in default.
 sudo prep-my-server --unset-config timezone-locale.keyboard-layout
@@ -215,9 +215,9 @@ These options apply to `main.py`, the packaged `prep-my-server` launcher, and th
 
 ### Positional arguments
 
-| Argument | Meaning |
-| --- | --- |
-| `tasks` | Optional list of task names to run. If omitted, all tasks run in the default order shown above. |
+| Argument | Meaning                                                                                         |
+| -------- | ----------------------------------------------------------------------------------------------- |
+| `tasks`  | Optional list of task names to run. If omitted, all tasks run in the default order shown above. |
 
 Supported task names:
 
@@ -244,34 +244,34 @@ Supported task names:
 
 ### Options
 
-| Option | Meaning |
-| --- | --- |
-| `-h`, `--help` | Show help and exit. |
-| `--dry-run` | Preview actions without changing the server. |
-| `--config-file FILE` | Use a different config file path instead of `/etc/prep-my-server/config.json`. |
-| `--show-config` | Print the current global config and exit unless task names are also passed. |
-| `--list-config-keys` | List supported config keys and exit unless task names are also passed. |
-| `--set-config KEY VALUE` | Persist a config value. Can be repeated. |
-| `--unset-config KEY` | Remove a config override so the built-in default is used again. Can be repeated. |
-| `--disable TASK` | Persistently disable a task in the default full run. Can be repeated. |
-| `--enable TASK` | Persistently enable a task in the default full run. Can be repeated. |
-| `--banner-text TEXT` | Use custom SSH banner text. Only matters when `ssh-login-banner` runs. Mutually exclusive with `--banner-file`. |
-| `--banner-file FILE` | Read SSH banner text from a file. Only matters when `ssh-login-banner` runs. Mutually exclusive with `--banner-text`. |
-| `--docker-user USER` | After Docker installation, add `USER` to the `docker` group. If omitted, the full main flow uses the user that invoked `sudo` when one can be detected. Only matters when `docker-install` runs. |
-| `--no-docker-user` | Do not add any user to the `docker` group. Only matters when `docker-install` runs. |
-| `--timezone TIMEZONE` | Override the timezone for this run of `timezone-locale`. |
-| `--locale LOCALE` | Override the default locale for this run of `timezone-locale`. |
-| `--language LANGUAGE` | Override the `LANGUAGE` value for this run of `timezone-locale`. |
-| `--lc-time LC_TIME` | Override the `LC_TIME` value for this run of `timezone-locale`. |
-| `--keyboard-model MODEL` | Override `XKBMODEL` for this run of `timezone-locale`. |
-| `--keyboard-layout LAYOUT` | Override `XKBLAYOUT` for this run of `timezone-locale`. |
-| `--keyboard-variant VARIANT` | Override `XKBVARIANT` for this run of `timezone-locale`. |
-| `--keyboard-options OPTIONS` | Override `XKBOPTIONS` for this run of `timezone-locale`. |
-| `--keyboard-backspace VALUE` | Override `BACKSPACE` for this run of `timezone-locale`. |
-| `--reboot-on-calendar EXPR` | Override the systemd `OnCalendar` expression for this run of `automatic-reboot`. |
-| `--reboot-randomized-delay-sec VALUE` | Override `RandomizedDelaySec` for this run of `automatic-reboot`. |
-| `--docker-restart-on-calendar EXPR` | Override the systemd `OnCalendar` expression for this run of `docker-nightly-restart`. |
-| `--docker-restart-randomized-delay-sec VALUE` | Override `RandomizedDelaySec` for this run of `docker-nightly-restart`. |
+| Option                                        | Meaning                                                                                                                                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-h`, `--help`                                | Show help and exit.                                                                                                                                                                              |
+| `--dry-run`                                   | Preview actions without changing the server.                                                                                                                                                     |
+| `--config-file FILE`                          | Use a different config file path instead of `/etc/prep-my-server/config.json`.                                                                                                                   |
+| `--show-config`                               | Print the current global config and exit unless task names are also passed.                                                                                                                      |
+| `--list-config-keys`                          | List supported config keys and exit unless task names are also passed.                                                                                                                           |
+| `--set-config KEY VALUE`                      | Persist a config value. Can be repeated.                                                                                                                                                         |
+| `--unset-config KEY`                          | Remove a config override so the built-in default is used again. Can be repeated.                                                                                                                 |
+| `--disable TASK`                              | Persistently disable a task in the default full run. Can be repeated.                                                                                                                            |
+| `--enable TASK`                               | Persistently enable a task in the default full run. Can be repeated.                                                                                                                             |
+| `--banner-text TEXT`                          | Use custom SSH banner text. Only matters when `ssh-login-banner` runs. Mutually exclusive with `--banner-file`.                                                                                  |
+| `--banner-file FILE`                          | Read SSH banner text from a file. Only matters when `ssh-login-banner` runs. Mutually exclusive with `--banner-text`.                                                                            |
+| `--docker-user USER`                          | After Docker installation, add `USER` to the `docker` group. If omitted, the full main flow uses the user that invoked `sudo` when one can be detected. Only matters when `docker-install` runs. |
+| `--no-docker-user`                            | Do not add any user to the `docker` group. Only matters when `docker-install` runs.                                                                                                              |
+| `--timezone TIMEZONE`                         | Override the timezone for this run of `timezone-locale`.                                                                                                                                         |
+| `--locale LOCALE`                             | Override the default locale for this run of `timezone-locale`.                                                                                                                                   |
+| `--language LANGUAGE`                         | Override the `LANGUAGE` value for this run of `timezone-locale`.                                                                                                                                 |
+| `--lc-time LC_TIME`                           | Override the `LC_TIME` value for this run of `timezone-locale`.                                                                                                                                  |
+| `--keyboard-model MODEL`                      | Override `XKBMODEL` for this run of `timezone-locale`.                                                                                                                                           |
+| `--keyboard-layout LAYOUT`                    | Override `XKBLAYOUT` for this run of `timezone-locale`.                                                                                                                                          |
+| `--keyboard-variant VARIANT`                  | Override `XKBVARIANT` for this run of `timezone-locale`.                                                                                                                                         |
+| `--keyboard-options OPTIONS`                  | Override `XKBOPTIONS` for this run of `timezone-locale`.                                                                                                                                         |
+| `--keyboard-backspace VALUE`                  | Override `BACKSPACE` for this run of `timezone-locale`.                                                                                                                                          |
+| `--reboot-on-calendar EXPR`                   | Override the systemd `OnCalendar` expression for this run of `automatic-reboot`.                                                                                                                 |
+| `--reboot-randomized-delay-sec VALUE`         | Override `RandomizedDelaySec` for this run of `automatic-reboot`.                                                                                                                                |
+| `--docker-restart-on-calendar EXPR`           | Override the systemd `OnCalendar` expression for this run of `docker-nightly-restart`.                                                                                                           |
+| `--docker-restart-randomized-delay-sec VALUE` | Override `RandomizedDelaySec` for this run of `docker-nightly-restart`.                                                                                                                          |
 
 Supported persistent setting keys:
 
@@ -339,18 +339,15 @@ Applies timezone, locale, and console keyboard defaults.
 Built-in defaults:
 
 - timezone: `Europe/Berlin`
-- locale: `de_DE.UTF-8`
-- language preference: `de_DE:de`
-- `LC_TIME`: `de_DE.UTF-8`
+- locale: `en_US.UTF-8`
+- language preference: `en_US:en`
+- `LC_TIME`: `en_US.UTF-8`
 - keyboard layout: German QWERTZ (`de`)
 
-Common US override:
+Common full US override:
 
 ```bash
 sudo prep-my-server --set-config timezone-locale.keyboard-layout us
-sudo prep-my-server --set-config timezone-locale.locale en_US.UTF-8
-sudo prep-my-server --set-config timezone-locale.language en_US:en
-sudo prep-my-server --set-config timezone-locale.lc-time en_US.UTF-8
 ```
 
 Behavior:
@@ -748,23 +745,23 @@ All helper scripts support `-h` / `--help`.
 
 These scripts accept just one operational flag besides help:
 
-| Script | Meaning of `--dry-run` |
-| --- | --- |
-| `packages_baseline.py` | Preview package installation changes. |
-| `unattended_upgrades.py` | Preview unattended-upgrade changes. |
-| `apt_ergonomics.py` | Preview APT and needrestart ergonomics changes. |
-| `motd_status.py` | Preview MOTD script changes. |
-| `logrotate_tuning.py` | Preview logrotate changes. |
-| `sysctl_tuning.py` | Preview sysctl changes. |
-| `fail2ban_setup.py` | Preview Fail2Ban changes. |
-| `time_sync.py` | Preview time synchronization changes. |
-| `automatic_cleanup.py` | Preview cleanup timer changes. |
-| `docker_log_defaults.py` | Preview Docker daemon log default changes. |
-| `shell_convenience.py` | Preview shell profile changes. |
-| `ssh_speedups.py` | Preview SSH tuning changes. |
-| `ssh_hardening_audit.py` | Preview SSH hardening audit checks. |
-| `sudo_session.py` | Preview sudoers changes. |
-| `firewall_baseline.py` | Preview firewall baseline changes. |
+| Script                   | Meaning of `--dry-run`                          |
+| ------------------------ | ----------------------------------------------- |
+| `packages_baseline.py`   | Preview package installation changes.           |
+| `unattended_upgrades.py` | Preview unattended-upgrade changes.             |
+| `apt_ergonomics.py`      | Preview APT and needrestart ergonomics changes. |
+| `motd_status.py`         | Preview MOTD script changes.                    |
+| `logrotate_tuning.py`    | Preview logrotate changes.                      |
+| `sysctl_tuning.py`       | Preview sysctl changes.                         |
+| `fail2ban_setup.py`      | Preview Fail2Ban changes.                       |
+| `time_sync.py`           | Preview time synchronization changes.           |
+| `automatic_cleanup.py`   | Preview cleanup timer changes.                  |
+| `docker_log_defaults.py` | Preview Docker daemon log default changes.      |
+| `shell_convenience.py`   | Preview shell profile changes.                  |
+| `ssh_speedups.py`        | Preview SSH tuning changes.                     |
+| `ssh_hardening_audit.py` | Preview SSH hardening audit checks.             |
+| `sudo_session.py`        | Preview sudoers changes.                        |
+| `firewall_baseline.py`   | Preview firewall baseline changes.              |
 
 Example:
 
@@ -776,32 +773,32 @@ sudo python3 fail2ban_setup.py --dry-run
 
 Parameters:
 
-| Option | Meaning |
-| --- | --- |
-| `--dry-run` | Preview locale, timezone, and keyboard changes. |
-| `--timezone TIMEZONE` | Timezone to set. |
-| `--locale LOCALE` | Locale to generate and set. |
-| `--language LANGUAGE` | `LANGUAGE` value to set. |
-| `--lc-time LC_TIME` | `LC_TIME` value to set. |
-| `--keyboard-model MODEL` | `XKBMODEL` value to set. |
-| `--keyboard-layout LAYOUT` | `XKBLAYOUT` value to set. |
-| `--keyboard-variant VARIANT` | `XKBVARIANT` value to set. |
-| `--keyboard-options OPTIONS` | `XKBOPTIONS` value to set. |
-| `--keyboard-backspace VALUE` | `BACKSPACE` value to set. |
+| Option                       | Meaning                                         |
+| ---------------------------- | ----------------------------------------------- |
+| `--dry-run`                  | Preview locale, timezone, and keyboard changes. |
+| `--timezone TIMEZONE`        | Timezone to set.                                |
+| `--locale LOCALE`            | Locale to generate and set.                     |
+| `--language LANGUAGE`        | `LANGUAGE` value to set.                        |
+| `--lc-time LC_TIME`          | `LC_TIME` value to set.                         |
+| `--keyboard-model MODEL`     | `XKBMODEL` value to set.                        |
+| `--keyboard-layout LAYOUT`   | `XKBLAYOUT` value to set.                       |
+| `--keyboard-variant VARIANT` | `XKBVARIANT` value to set.                      |
+| `--keyboard-options OPTIONS` | `XKBOPTIONS` value to set.                      |
+| `--keyboard-backspace VALUE` | `BACKSPACE` value to set.                       |
 
 Example:
 
 ```bash
-sudo python3 timezone_locale.py --keyboard-layout us --locale en_US.UTF-8 --language en_US:en --lc-time en_US.UTF-8
+sudo python3 timezone_locale.py --keyboard-layout us
 ```
 
 ### `docker_install.py`
 
 Parameters:
 
-| Option | Meaning |
-| --- | --- |
-| `--dry-run` | Preview Docker installation changes. |
+| Option                            | Meaning                                              |
+| --------------------------------- | ---------------------------------------------------- |
+| `--dry-run`                       | Preview Docker installation changes.                 |
 | `--add-user-to-docker-group USER` | Add `USER` to the `docker` group after installation. |
 
 Example:
@@ -814,10 +811,10 @@ sudo python3 docker_install.py --add-user-to-docker-group alice
 
 Parameters:
 
-| Option | Meaning |
-| --- | --- |
-| `--dry-run` | Preview automatic reboot timer changes. |
-| `--on-calendar EXPR` | systemd `OnCalendar` expression for the reboot timer. |
+| Option                         | Meaning                                                  |
+| ------------------------------ | -------------------------------------------------------- |
+| `--dry-run`                    | Preview automatic reboot timer changes.                  |
+| `--on-calendar EXPR`           | systemd `OnCalendar` expression for the reboot timer.    |
 | `--randomized-delay-sec VALUE` | systemd `RandomizedDelaySec` value for the reboot timer. |
 
 Example:
@@ -830,10 +827,10 @@ sudo python3 automatic_reboot.py --on-calendar '*-*-* 03:30:00' --randomized-del
 
 Parameters:
 
-| Option | Meaning |
-| --- | --- |
-| `--dry-run` | Preview Docker restart timer changes. |
-| `--on-calendar EXPR` | systemd `OnCalendar` expression for the Docker restart timer. |
+| Option                         | Meaning                                                          |
+| ------------------------------ | ---------------------------------------------------------------- |
+| `--dry-run`                    | Preview Docker restart timer changes.                            |
+| `--on-calendar EXPR`           | systemd `OnCalendar` expression for the Docker restart timer.    |
 | `--randomized-delay-sec VALUE` | systemd `RandomizedDelaySec` value for the Docker restart timer. |
 
 Example:
@@ -846,11 +843,11 @@ sudo python3 docker_nightly_restart.py --on-calendar '*-*-* 04:30:00' --randomiz
 
 Parameters:
 
-| Option | Meaning |
-| --- | --- |
-| `--dry-run` | Preview banner changes. |
+| Option               | Meaning                        |
+| -------------------- | ------------------------------ |
+| `--dry-run`          | Preview banner changes.        |
 | `--banner-text TEXT` | Use inline custom banner text. |
-| `--banner-file FILE` | Read banner text from a file. |
+| `--banner-file FILE` | Read banner text from a file.  |
 
 `--banner-text` and `--banner-file` are mutually exclusive.
 
@@ -873,14 +870,14 @@ It exists for people who want to build a distributable artifact from the reposit
 
 Parameters:
 
-| Option / Argument | Meaning |
-| --- | --- |
-| `artifact` | One of `pyz`, `pyinstaller`, or `deb`. |
-| `--version VERSION` | Version embedded in artifact metadata. Default: `0.1.0`. |
-| `--output-dir DIR` | Output directory. Default: `dist`. |
-| `--python PATH` | Interpreter path embedded into the zipapp shebang and Debian launcher. Default: `/usr/bin/python3`. |
-| `--runtime-tmpdir DIR` | Extraction base directory baked into the PyInstaller executable. Default: `/var/tmp`. |
-| `--maintainer TEXT` | Maintainer string for Debian package metadata. |
+| Option / Argument      | Meaning                                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| `artifact`             | One of `pyz`, `pyinstaller`, or `deb`.                                                              |
+| `--version VERSION`    | Version embedded in artifact metadata. Default: `0.1.0`.                                            |
+| `--output-dir DIR`     | Output directory. Default: `dist`.                                                                  |
+| `--python PATH`        | Interpreter path embedded into the zipapp shebang and Debian launcher. Default: `/usr/bin/python3`. |
+| `--runtime-tmpdir DIR` | Extraction base directory baked into the PyInstaller executable. Default: `/var/tmp`.               |
+| `--maintainer TEXT`    | Maintainer string for Debian package metadata.                                                      |
 
 Examples:
 

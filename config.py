@@ -16,9 +16,9 @@ TASK_ENABLED_DEFAULTS: dict[str, bool] = {
 }
 SETTING_DEFAULTS: dict[str, Any] = {
     "timezone-locale.timezone": "Europe/Berlin",
-    "timezone-locale.locale": "de_DE.UTF-8",
-    "timezone-locale.language": "de_DE:de",
-    "timezone-locale.lc-time": "de_DE.UTF-8",
+    "timezone-locale.locale": "en_US.UTF-8",
+    "timezone-locale.language": "en_US:en",
+    "timezone-locale.lc-time": "en_US.UTF-8",
     "timezone-locale.keyboard-model": "pc105",
     "timezone-locale.keyboard-layout": "de",
     "timezone-locale.keyboard-variant": "",
