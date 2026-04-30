@@ -20,6 +20,7 @@ APP_NAME = "prep-my-server"
 DEFAULT_VERSION = "0.1.0"
 DEFAULT_DEB_MAINTAINER = "GitHub Actions <41898282+github-actions[bot]@users.noreply.github.com>"
 DEFAULT_PYINSTALLER_RUNTIME_TMPDIR = "/var/tmp"
+DEBIAN_LAUNCHER = APP_NAME
 MODULE_FILES = (
     "automatic_cleanup.py",
     "common.py",
@@ -307,7 +308,7 @@ def build_deb(*, output_dir: Path, version: str, interpreter: str, maintainer: s
             maintainer=maintainer,
         )
 
-        for executable_path in (debian_dir / "rules", debian_dir / APP_NAME):
+        for executable_path in (debian_dir / "rules", source_root / DEBIAN_LAUNCHER):
             if not executable_path.is_file():
                 raise RuntimeError(
                     f"Expected Debian packaging helper file at {executable_path}, but it was missing."

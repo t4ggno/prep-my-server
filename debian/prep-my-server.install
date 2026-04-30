@@ -1,4 +1,4 @@
-debian/prep-my-server usr/bin/
+prep-my-server usr/bin/
 automatic_cleanup.py usr/share/prep-my-server/
 common.py usr/share/prep-my-server/
 docker_install.py usr/share/prep-my-server/
