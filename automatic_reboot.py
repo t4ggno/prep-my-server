@@ -33,6 +33,7 @@ set -eu
 
 log_dir=/var/log/prep-my-server
 lock_file=/run/prep-my-server-reboot.lock
+reboot_required_file=/var/run/reboot-required
 
 mkdir -p "$log_dir"
 exec >>"$log_dir/reboot.log" 2>&1
@@ -45,7 +46,12 @@ if command -v flock >/dev/null 2>&1; then
     fi
 fi
 
-printf '[%s] Starting scheduled prep-my-server reboot.\n' "$(date --iso-8601=seconds 2>/dev/null || date)"
+if [ ! -f "$reboot_required_file" ]; then
+    printf '[%s] No reboot-required marker found; skipping scheduled reboot.\n' "$(date --iso-8601=seconds 2>/dev/null || date)"
+    exit 0
+fi
+
+printf '[%s] Reboot-required marker found; starting scheduled prep-my-server reboot.\n' "$(date --iso-8601=seconds 2>/dev/null || date)"
 
 if command -v systemctl >/dev/null 2>&1; then
     exec systemctl reboot
@@ -61,6 +67,34 @@ def _require_non_empty(value: str, *, name: str) -> str:
     if not normalized:
         raise RuntimeError(f"{name} cannot be empty.")
     return normalized
+
+
+def _require_single_line_systemd_value(value: str, *, name: str) -> str:
+    normalized = _require_non_empty(value, name=name)
+    if any(character in normalized for character in ("\r", "\n", "\x00")):
+        raise RuntimeError(f"{name} cannot contain newlines or NUL bytes.")
+    return normalized
+
+
+def _validate_timer_values(
+    *,
+    on_calendar: str,
+    randomized_delay_sec: str,
+    result: FeatureResult,
+) -> None:
+    try:
+        systemd_analyze = find_command(["systemd-analyze"])
+    except RuntimeError:
+        result.add_warning(
+            "systemd-analyze was not found, so timer expression validation was limited to basic single-line checks."
+        )
+        return
+
+    calendar_command = [systemd_analyze, "calendar", on_calendar]
+    timespan_command = [systemd_analyze, "timespan", randomized_delay_sec]
+    run_checked(calendar_command)
+    run_checked(timespan_command)
+    result.add_detail("Validated the reboot timer schedule with systemd-analyze calendar and timespan.")
 
 
 def _timer_content(*, on_calendar: str, randomized_delay_sec: str) -> str:
@@ -105,8 +139,8 @@ def configure_automatic_reboot(
     ensure_root(dry_run=dry_run)
     ensure_directory_path(LOCAL_LOG_DIR, description="reboot log directory")
 
-    on_calendar = _require_non_empty(on_calendar, name="on_calendar")
-    randomized_delay_sec = _require_non_empty(
+    on_calendar = _require_single_line_systemd_value(on_calendar, name="on_calendar")
+    randomized_delay_sec = _require_single_line_systemd_value(
         randomized_delay_sec,
         name="randomized_delay_sec",
     )
@@ -119,7 +153,10 @@ def configure_automatic_reboot(
 
     sh_path = find_command(["sh"])
     systemctl = find_command(["systemctl"]) if is_systemd_available() else None
-    systemd_analyze = find_command(["systemd-analyze"]) if is_systemd_available() else None
+    try:
+        systemd_analyze = find_command(["systemd-analyze"]) if is_systemd_available() else None
+    except RuntimeError:
+        systemd_analyze = None
     syntax_command = [sh_path, "-n", str(script_path)]
 
     script_snapshot = capture_snapshot(script_path)
@@ -144,6 +181,11 @@ def configure_automatic_reboot(
     )
 
     result = FeatureResult(name="automatic-reboot")
+    _validate_timer_values(
+        on_calendar=on_calendar,
+        randomized_delay_sec=randomized_delay_sec,
+        result=result,
+    )
 
     if dry_run:
         if log_dir_needs_update:
@@ -181,6 +223,7 @@ def configure_automatic_reboot(
         result.add_detail(
             f"Configured reboot schedule: OnCalendar={on_calendar}, RandomizedDelaySec={randomized_delay_sec}."
         )
+        result.add_detail("The scheduled reboot would run only when /var/run/reboot-required exists.")
         return result
 
     LOCAL_LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -230,6 +273,7 @@ def configure_automatic_reboot(
     result.add_detail(
         f"Configured reboot schedule: OnCalendar={on_calendar}, RandomizedDelaySec={randomized_delay_sec}."
     )
+    result.add_detail("The scheduled reboot runs only when /var/run/reboot-required exists.")
     return result
 
 

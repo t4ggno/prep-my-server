@@ -9,6 +9,9 @@ from common import normalize_text, read_text_file, write_text_if_changed
 
 CONFIG_PATH = Path("/etc/prep-my-server/config.json")
 CONFIG_VERSION = 1
+TASK_ENABLED_DEFAULTS: dict[str, bool] = {
+    "automatic-reboot": False,
+}
 SETTING_DEFAULTS: dict[str, Any] = {
     "timezone-locale.timezone": "Europe/Berlin",
     "timezone-locale.locale": "de_DE.UTF-8",
@@ -242,9 +245,19 @@ def unset_task_enabled(config: dict[str, Any], task_name: str) -> bool:
     return True
 
 
+def task_default_enabled(task_name: str) -> bool:
+    return TASK_ENABLED_DEFAULTS.get(task_name, True)
+
+
 def set_task_enabled(config: dict[str, Any], task_name: str, enabled: bool) -> bool:
     tasks = normalize_config(config)["tasks"]
     current = tasks.get(task_name)
+    if enabled == task_default_enabled(task_name):
+        if task_name not in tasks:
+            return False
+        del tasks[task_name]
+        config["tasks"] = tasks
+        return True
     if isinstance(current, dict) and current.get("enabled") == enabled:
         return False
     tasks[task_name] = {"enabled": enabled}
@@ -253,11 +266,13 @@ def set_task_enabled(config: dict[str, Any], task_name: str, enabled: bool) -> b
 
 
 def task_is_enabled(config: dict[str, Any], task_name: str) -> bool:
-    task_config = normalize_config(config)["tasks"].get(task_name, {})
+    task_config = normalize_config(config)["tasks"].get(task_name)
+    if task_config is None:
+        return task_default_enabled(task_name)
     if not isinstance(task_config, dict):
         return _coerce_bool(task_config, key=f"tasks.{task_name}.enabled")
     if "enabled" not in task_config:
-        return True
+        return task_default_enabled(task_name)
     return _coerce_bool(task_config["enabled"], key=f"tasks.{task_name}.enabled")
 
 
@@ -266,6 +281,41 @@ def get_setting(config: dict[str, Any], key: str) -> Any:
     if key in settings:
         return settings[key]
     return SETTING_DEFAULTS[key]
+
+
+def non_default_settings(config: dict[str, Any]) -> dict[str, Any]:
+    settings = normalize_config(config)["settings"]
+    return {
+        key: value
+        for key, value in sorted(settings.items())
+        if SETTING_DEFAULTS.get(key) != value
+    }
+
+
+def non_default_task_states(
+    config: dict[str, Any],
+    task_names: Sequence[str],
+) -> dict[str, bool]:
+    known_tasks = set(task_names)
+    task_states: dict[str, bool] = {}
+    tasks = normalize_config(config)["tasks"]
+    for task_name, task_config in sorted(tasks.items()):
+        if task_name not in known_tasks:
+            continue
+        if isinstance(task_config, dict):
+            if "enabled" not in task_config:
+                continue
+            enabled = _coerce_bool(
+                task_config["enabled"],
+                key=f"tasks.{task_name}.enabled",
+            )
+        else:
+            enabled = _coerce_bool(task_config, key=f"tasks.{task_name}.enabled")
+
+        if enabled != task_default_enabled(task_name):
+            task_states[task_name] = enabled
+
+    return task_states
 
 
 def render_config(config: dict[str, Any]) -> str:

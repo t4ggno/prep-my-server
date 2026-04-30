@@ -37,7 +37,7 @@ Important notes:
 - Most tasks assume an APT-based system.
 - The Docker helper supports hosts whose `/etc/os-release` reports `ID=debian` or `ID=ubuntu`.
 - The top-level default run adds the user that invoked `sudo` to the `docker` group when it can detect one; pass `--no-docker-user` to skip that.
-- The `automatic-reboot` task defaults to a daily reboot at `03:30` with up to `30m` randomized delay.
+- The `automatic-reboot` task is disabled in the default full run. When enabled, it defaults to a daily check at `03:30` with up to `30m` randomized delay and reboots only if `/var/run/reboot-required` exists.
 - The `timezone-locale` task still defaults to **`Europe/Berlin`**, **`de_DE.UTF-8`**, and a **German QWERTZ** keyboard layout, but those values can be changed via CLI flags or global config.
 - A dry run still needs to run on Linux, but it skips privileged writes.
 
@@ -137,7 +137,11 @@ When you run `main.py` **without positional tasks**, it executes enabled tasks i
 14. `sudo-session-cache`
 15. `ssh-login-banner`
 
+`automatic-reboot` is disabled by default in the full run. Enable it persistently with `--enable automatic-reboot`, or run it for one invocation by passing `automatic-reboot` as an explicit task.
+
 If you pass one or more task names, only those tasks run. Explicit positional task names are treated as an override for that invocation, so they can run even if a task is disabled in the global default-run config.
+
+Before running tasks, the command prints a short execution config summary showing disabled tasks, whether `automatic-reboot` is enabled for default full runs, non-default task enablement, and non-default persistent settings.
 
 The top-level CLI keeps going even if one task fails; it reports the error, continues with later tasks, and returns exit code `1` at the end if any task failed.
 
@@ -159,6 +163,9 @@ sudo prep-my-server --disable unattended-upgrades
 
 # Re-enable it later.
 sudo prep-my-server --enable unattended-upgrades
+
+# Enable the reboot-required timer in future default runs.
+sudo prep-my-server --enable automatic-reboot
 
 # Use an American keyboard layout in future default runs.
 sudo prep-my-server --set-config timezone-locale.keyboard-layout us
@@ -472,10 +479,11 @@ It deliberately does **not** run `apt-get clean` and does not do purge-style rem
 
 ### `automatic-reboot`
 
-Installs a scheduled automatic reboot timer.
+Installs a scheduled automatic reboot timer. This task is disabled in the top-level default full run unless you enable it with config or select it explicitly.
 
 Built-in defaults:
 
+- default full-run state: disabled
 - `OnCalendar=*-*-* 03:30:00`
 - `RandomizedDelaySec=30m`
 
@@ -486,18 +494,21 @@ Behavior:
 - writes `/etc/systemd/system/prep-my-server-reboot.timer`
 - creates `/var/log/prep-my-server`
 - logs reboot attempts to `/var/log/prep-my-server/reboot.log`
+- validates timer values with `systemd-analyze calendar` and `systemd-analyze timespan` when available
 - validates the shell script and, when available, validates the systemd units
 - enables the timer when `systemd` is available
+- the timer only reboots when `/var/run/reboot-required` exists; otherwise it logs and exits
 
 You can change the schedule with either CLI overrides for one run:
 
 ```bash
-sudo prep-my-server --reboot-on-calendar 'Sat *-*-* 04:00:00' --reboot-randomized-delay-sec 15m
+sudo prep-my-server --reboot-on-calendar 'Sat *-*-* 04:00:00' --reboot-randomized-delay-sec 15m automatic-reboot
 ```
 
 Or persistent config:
 
 ```bash
+sudo prep-my-server --enable automatic-reboot
 sudo prep-my-server --set-config automatic-reboot.on-calendar 'Sat *-*-* 04:00:00'
 sudo prep-my-server --set-config automatic-reboot.randomized-delay-sec 15m
 ```
@@ -789,6 +800,7 @@ sudo python3 main.py --set-config timezone-locale.keyboard-layout us
 Change the automatic reboot interval to weekly on Saturday night:
 
 ```bash
+sudo python3 main.py --enable automatic-reboot
 sudo python3 main.py --set-config automatic-reboot.on-calendar 'Sat *-*-* 04:00:00'
 ```
 

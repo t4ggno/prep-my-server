@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 from typing import Callable
@@ -15,10 +16,13 @@ from config import (
     get_setting,
     known_config_keys,
     load_config,
+    non_default_settings,
+    non_default_task_states,
     render_config,
     save_config,
     set_config_value,
     set_task_enabled,
+    task_default_enabled,
     task_is_enabled,
     unset_config_value,
     validate_config_task_names,
@@ -358,6 +362,72 @@ def select_task_names(args: argparse.Namespace, config: dict[str, object]) -> tu
     return selected, skipped
 
 
+def _enabled_label(enabled: bool) -> str:
+    return "enabled" if enabled else "disabled"
+
+
+def _format_config_value(value: object) -> str:
+    return json.dumps(value, sort_keys=True)
+
+
+def _format_key_values(values: dict[str, object]) -> str:
+    if not values:
+        return "none"
+    return ", ".join(f"{key}={_format_config_value(value)}" for key, value in values.items())
+
+
+def _format_task_states(task_states: dict[str, bool]) -> str:
+    if not task_states:
+        return "none"
+    return ", ".join(f"{task_name}={_enabled_label(enabled)}" for task_name, enabled in task_states.items())
+
+
+def _format_disabled_tasks(task_names: list[str]) -> str:
+    if not task_names:
+        return "none"
+    return ", ".join(
+        f"{task_name} ({'default' if not task_default_enabled(task_name) else 'config'})"
+        for task_name in task_names
+    )
+
+
+def print_execution_config(
+    args: argparse.Namespace,
+    config: dict[str, object],
+    selected_task_names: list[str],
+    skipped_task_names: list[str],
+) -> None:
+    task_state_overrides = non_default_task_states(config, TASK_NAMES)
+    setting_overrides = non_default_settings(config)
+    automatic_reboot_enabled = task_is_enabled(config, "automatic-reboot")
+    automatic_reboot_source = (
+        "config override" if "automatic-reboot" in task_state_overrides else "default"
+    )
+    automatic_reboot_selection = (
+        "selected for this run"
+        if "automatic-reboot" in selected_task_names
+        else "not selected for this run"
+    )
+
+    print("Execution config:")
+    if args.tasks:
+        print(
+            "  - Task selection: explicit ("
+            + ", ".join(selected_task_names)
+            + "); task enablement defaults are bypassed."
+        )
+    else:
+        print(f"  - Disabled tasks: {_format_disabled_tasks(skipped_task_names)}")
+    print(
+        "  - automatic-reboot: "
+        f"{_enabled_label(automatic_reboot_enabled)} for default full runs "
+        f"({automatic_reboot_source}); {automatic_reboot_selection}."
+    )
+    print(f"  - Non-default task enablement: {_format_task_states(task_state_overrides)}")
+    print(f"  - Non-default settings: {_format_key_values(setting_overrides)}")
+    print()
+
+
 def main() -> int:
     args = build_parser().parse_args()
     try:
@@ -403,9 +473,7 @@ def main() -> int:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
-    if skipped_task_names:
-        print("Skipping disabled tasks from config: " + ", ".join(skipped_task_names))
-        print()
+    print_execution_config(args, config, selected_task_names, skipped_task_names)
 
     had_error = False
     for task_name in selected_task_names:

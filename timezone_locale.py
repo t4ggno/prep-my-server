@@ -53,6 +53,35 @@ def _require_non_empty(value: str, *, name: str) -> str:
     return normalized
 
 
+def _validated_timezone_target(timezone: str) -> Path:
+    if any(character in timezone for character in ("\r", "\n", "\x00")):
+        raise RuntimeError("timezone cannot contain newlines or NUL bytes.")
+
+    timezone_path = Path(timezone)
+    if timezone_path.is_absolute():
+        raise RuntimeError("timezone must be a zoneinfo name, not an absolute path.")
+    if any(part in (".", "..") for part in timezone_path.parts):
+        raise RuntimeError("timezone cannot contain '.' or '..' path components.")
+
+    try:
+        zoneinfo_root = ZONEINFO_ROOT.resolve(strict=True)
+        timezone_target = (ZONEINFO_ROOT / timezone_path).resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"Timezone data file not found: {ZONEINFO_ROOT / timezone_path}") from exc
+
+    try:
+        timezone_target.relative_to(zoneinfo_root)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Timezone data file must stay below {ZONEINFO_ROOT}: {ZONEINFO_ROOT / timezone_path}"
+        ) from exc
+
+    if not timezone_target.is_file():
+        raise RuntimeError(f"Timezone data path is not a file: {ZONEINFO_ROOT / timezone_path}")
+
+    return ZONEINFO_ROOT / timezone_path
+
+
 def _locale_gen_entry(locale: str) -> str:
     return f"{locale} UTF-8"
 
@@ -160,6 +189,7 @@ def _current_timezone() -> str | None:
 
 
 def _set_timezone(*, timezone: str, dry_run: bool, result: FeatureResult) -> bool:
+    timezone_target = _validated_timezone_target(timezone)
     current_timezone = _current_timezone()
     timezone_needs_update = current_timezone != timezone
     if not timezone_needs_update:
@@ -178,10 +208,6 @@ def _set_timezone(*, timezone: str, dry_run: bool, result: FeatureResult) -> boo
         return True
 
     timezone_file_content = normalize_text(timezone)
-    timezone_target = ZONEINFO_ROOT / timezone
-    if not timezone_target.exists():
-        raise RuntimeError(f"Timezone data file not found: {timezone_target}")
-
     if dry_run:
         result.add_detail(f"Would write {TIMEZONE_PATH}.")
         result.add_detail(f"Would update /etc/localtime to point at {timezone_target}.")
@@ -189,9 +215,11 @@ def _set_timezone(*, timezone: str, dry_run: bool, result: FeatureResult) -> boo
 
     write_text_if_changed(TIMEZONE_PATH, timezone_file_content, mode=0o644)
     localtime_path = Path("/etc/localtime")
-    if localtime_path.exists() or localtime_path.is_symlink():
-        localtime_path.unlink()
-    localtime_path.symlink_to(timezone_target)
+    temporary_localtime_path = localtime_path.with_name(".localtime.prep-my-server.tmp")
+    if temporary_localtime_path.exists() or temporary_localtime_path.is_symlink():
+        temporary_localtime_path.unlink()
+    temporary_localtime_path.symlink_to(timezone_target)
+    temporary_localtime_path.replace(localtime_path)
     result.add_detail(f"Set the system timezone to {timezone}.")
     return True
 
@@ -353,15 +381,15 @@ def configure_timezone_locale(
         else:
             result.add_detail(f"Default locale already prefers {locale}.")
 
-        if _set_timezone(timezone=timezone, dry_run=False, result=result):
-            result.changed = True
-
         if keyboard_needs_update:
             write_text_if_changed(keyboard_path, keyboard_content, mode=0o644)
             result.add_detail(f"Wrote {keyboard_path} for keyboard layout {keyboard_layout}.")
             result.changed = True
         else:
             result.add_detail(f"{keyboard_path} already has the desired keyboard layout.")
+
+        if _set_timezone(timezone=timezone, dry_run=False, result=result):
+            result.changed = True
 
         try:
             setupcon = find_command(["setupcon"])
