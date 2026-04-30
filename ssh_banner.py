@@ -16,6 +16,7 @@ from common import (
     is_systemd_available,
     normalize_text,
     print_result,
+    read_text_file,
     restore_snapshot,
     run_checked,
     try_run,
@@ -38,10 +39,22 @@ _MATCH_LINE_RE = re.compile(r"^\s*Match\b", re.IGNORECASE)
 
 def resolve_banner_text(banner_text: str | None, banner_file: Path | None) -> str:
     if banner_file is not None:
-        return normalize_text(banner_file.read_text(encoding="utf-8"))
-    if banner_text is not None:
-        return normalize_text(banner_text)
-    return DEFAULT_BANNER_TEXT
+        resolved_text = normalize_text(
+            read_text_file(
+                banner_file,
+                description="SSH banner input file",
+            )
+            or ""
+        )
+    elif banner_text is not None:
+        resolved_text = normalize_text(banner_text)
+    else:
+        resolved_text = DEFAULT_BANNER_TEXT
+
+    if not resolved_text.strip():
+        raise RuntimeError("SSH banner text cannot be empty.")
+
+    return resolved_text
 
 
 def render_sshd_config_with_banner(config_text: str, banner_path: Path) -> str:

@@ -7,12 +7,14 @@ import sys
 
 from common import (
     FeatureResult,
+    capture_snapshot,
     ensure_linux,
     ensure_root,
     find_command,
     format_command,
     normalize_text,
     print_result,
+    restore_snapshot,
     run_checked,
     write_text_if_changed,
 )
@@ -41,8 +43,11 @@ def configure_sysctl_tuning(
     ensure_root(dry_run=dry_run)
 
     sysctl = find_command(["sysctl", "/usr/sbin/sysctl", "/sbin/sysctl"])
+    config_snapshot = capture_snapshot(config_path)
     config_needs_update = (
-        not config_path.exists() or config_path.read_text(encoding="utf-8") != SYSCTL_CONFIG
+        not config_snapshot.existed
+        or config_snapshot.content != SYSCTL_CONFIG
+        or config_snapshot.mode != 0o644
     )
     apply_command = [sysctl, "-p", str(config_path)]
 
@@ -56,13 +61,18 @@ def configure_sysctl_tuning(
         result.add_detail(f"Would run: {format_command(apply_command)}")
         return result
 
-    if write_text_if_changed(config_path, SYSCTL_CONFIG, mode=0o644):
-        result.add_detail(f"Wrote {config_path}.")
-        result.changed = True
-    else:
-        result.add_detail(f"{config_path} already has the desired sysctl settings.")
+    try:
+        if write_text_if_changed(config_path, SYSCTL_CONFIG, mode=0o644):
+            result.add_detail(f"Wrote {config_path}.")
+            result.changed = True
+        else:
+            result.add_detail(f"{config_path} already has the desired sysctl settings.")
 
-    run_checked(apply_command)
+        run_checked(apply_command)
+    except Exception:
+        restore_snapshot(config_path, config_snapshot)
+        raise
+
     result.add_detail("Applied the sysctl settings from the local drop-in.")
     return result
 

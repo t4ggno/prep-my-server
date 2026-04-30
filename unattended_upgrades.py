@@ -7,18 +7,22 @@ import sys
 
 from common import (
     FeatureResult,
+    ensure_apt_system,
     ensure_linux,
     ensure_root,
     find_command,
     format_command,
+    get_missing_packages,
     is_systemd_available,
     normalize_text,
     print_result,
+    read_text_file,
     run_checked,
     write_text_if_changed,
 )
 
 APT_OVERRIDE_PATH = Path("/etc/apt/apt.conf.d/99prep-my-server-auto-upgrades")
+UNATTENDED_UPGRADES_PACKAGE = ("unattended-upgrades",)
 APT_OVERRIDE_CONTENT = normalize_text(
     """// Managed by prep-my-server.
 APT::Periodic::Update-Package-Lists \"1\";
@@ -34,32 +38,42 @@ def enable_unattended_upgrades(
     ensure_linux()
     ensure_root(dry_run=dry_run)
 
-    try:
-        apt_get = find_command(["apt-get"])
-    except RuntimeError as exc:
-        raise RuntimeError(
-            "This unattended-upgrades helper targets Debian/Ubuntu systems that provide apt-get."
-        ) from exc
+    apt_get, dpkg_query = ensure_apt_system()
+    missing_packages = get_missing_packages(
+        UNATTENDED_UPGRADES_PACKAGE,
+        dpkg_query_path=dpkg_query,
+    )
 
     result = FeatureResult(name="unattended-upgrades")
 
     if dry_run:
-        result.changed = True
-        result.add_detail(f"Would run: {format_command([apt_get, 'update'])}")
-        result.add_detail(
-            f"Would run: {format_command([apt_get, 'install', '-y', 'unattended-upgrades'])}"
-        )
+        if missing_packages:
+            result.changed = True
+            result.add_detail(f"Would run: {format_command([apt_get, 'update'])}")
+            result.add_detail(
+                f"Would run: {format_command([apt_get, 'install', '-y', *missing_packages])}"
+            )
+        else:
+            result.add_detail("The unattended-upgrades package is already installed.")
     else:
-        run_checked([apt_get, "update"])
-        run_checked(
-            [apt_get, "install", "-y", "unattended-upgrades"],
-            env={"DEBIAN_FRONTEND": "noninteractive"},
-        )
-        result.changed = True
-        result.add_detail("Installed or confirmed the unattended-upgrades package.")
+        if missing_packages:
+            run_checked([apt_get, "update"])
+            run_checked(
+                [apt_get, "install", "-y", *missing_packages],
+                env={"DEBIAN_FRONTEND": "noninteractive"},
+            )
+            result.changed = True
+            result.add_detail("Installed the unattended-upgrades package.")
+        else:
+            result.add_detail("The unattended-upgrades package is already installed.")
 
-    override_needs_update = not override_path.exists() or (
-        override_path.read_text(encoding="utf-8") != APT_OVERRIDE_CONTENT
+    override_needs_update = (
+        read_text_file(
+            override_path,
+            missing_ok=True,
+            description="APT unattended-upgrades override",
+        )
+        != APT_OVERRIDE_CONTENT
     )
     if dry_run:
         if override_needs_update:

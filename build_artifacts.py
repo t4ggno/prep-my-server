@@ -14,6 +14,8 @@ import textwrap
 import zipapp
 from pathlib import Path
 
+from common import format_command, read_text_file
+
 APP_NAME = "prep-my-server"
 DEFAULT_VERSION = "0.1.0"
 DEFAULT_DEB_MAINTAINER = "GitHub Actions <41898282+github-actions[bot]@users.noreply.github.com>"
@@ -36,6 +38,18 @@ MODULE_FILES = (
     "unattended_upgrades.py",
 )
 ENTRYPOINT = "from main import main\nraise SystemExit(main())\n"
+
+
+def _combine_output(stdout: str, stderr: str) -> str:
+    parts = [segment.strip() for segment in (stdout, stderr) if segment and segment.strip()]
+    return "\n".join(parts)
+
+
+def _validated_non_empty(value: str, *, option_name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise RuntimeError(f"{option_name} cannot be empty.")
+    return normalized
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -91,6 +105,13 @@ def project_root() -> Path:
 
 def stage_application(stage_dir: Path) -> None:
     root = project_root()
+    missing_modules = [module_name for module_name in MODULE_FILES if not (root / module_name).is_file()]
+    if missing_modules:
+        raise RuntimeError(
+            "Cannot stage the application because these source files are missing or not regular files: "
+            + ", ".join(missing_modules)
+        )
+
     for module_name in MODULE_FILES:
         shutil.copy2(root / module_name, stage_dir / module_name)
 
@@ -221,7 +242,12 @@ def write_debian_changelog(*, changelog_path: Path, version: str, maintainer: st
 
 
 def rewrite_debian_control_maintainer(*, control_path: Path, maintainer: str) -> None:
-    lines = control_path.read_text(encoding="utf-8").splitlines()
+    control_content = read_text_file(
+        control_path,
+        description="Debian control file",
+    )
+    assert control_content is not None
+    lines = control_content.splitlines()
     rewritten_lines: list[str] = []
     replaced = False
 
@@ -282,15 +308,27 @@ def build_deb(*, output_dir: Path, version: str, interpreter: str, maintainer: s
         )
 
         for executable_path in (debian_dir / "rules", debian_dir / APP_NAME):
+            if not executable_path.is_file():
+                raise RuntimeError(
+                    f"Expected Debian packaging helper file at {executable_path}, but it was missing."
+                )
             executable_path.chmod(
                 executable_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
             )
 
-        subprocess.run(
-            [dpkg_buildpackage, "-us", "-uc", "-b"],
+        build_command = [dpkg_buildpackage, "-us", "-uc", "-b"]
+        completed = subprocess.run(
+            build_command,
             cwd=source_root,
-            check=True,
+            text=True,
+            capture_output=True,
+            check=False,
         )
+        if completed.returncode != 0:
+            output = _combine_output(completed.stdout, completed.stderr)
+            if not output:
+                output = f"Command exited with status {completed.returncode}."
+            raise RuntimeError(f"Command failed: {format_command(build_command)}\n{output}")
 
         built_packages = sorted(temp_path.glob(f"{APP_NAME}_{version}_*.deb"))
         if not built_packages:
@@ -310,18 +348,22 @@ def main() -> int:
 
     try:
         if args.artifact == "pyz":
-            output_path = build_pyz(output_dir=args.output_dir, interpreter=args.python)
+            interpreter = _validated_non_empty(args.python, option_name="--python")
+            output_path = build_pyz(output_dir=args.output_dir, interpreter=interpreter)
         elif args.artifact == "pyinstaller":
             output_path = build_pyinstaller(
                 output_dir=args.output_dir,
                 runtime_tmpdir=args.runtime_tmpdir,
             )
         else:
+            version = _validated_non_empty(args.version, option_name="--version")
+            interpreter = _validated_non_empty(args.python, option_name="--python")
+            maintainer = _validated_non_empty(args.maintainer, option_name="--maintainer")
             output_path = build_deb(
                 output_dir=args.output_dir,
-                version=args.version,
-                interpreter=args.python,
-                maintainer=args.maintainer,
+                version=version,
+                interpreter=interpreter,
+                maintainer=maintainer,
             )
     except Exception as exc:  # pragma: no cover - CLI safety net
         print(f"[ERROR] {exc}", file=sys.stderr)

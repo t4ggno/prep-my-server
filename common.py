@@ -61,6 +61,32 @@ def ensure_root(*, dry_run: bool = False) -> None:
         raise RuntimeError("Run this script as root, for example: sudo python3 main.py")
 
 
+def ensure_directory_path(path: Path, *, description: str) -> None:
+    if path.exists() and not path.is_dir():
+        raise RuntimeError(f"Expected {description} at {path}, but found a non-directory path.")
+
+
+def read_text_file(
+    path: Path,
+    *,
+    encoding: str = DEFAULT_ENCODING,
+    missing_ok: bool = False,
+    description: str = "file",
+) -> str | None:
+    if not path.exists():
+        if missing_ok:
+            return None
+        raise RuntimeError(f"Expected {description} at {path}, but it does not exist.")
+
+    if path.is_dir():
+        raise RuntimeError(f"Expected {description} at {path}, but found a directory.")
+
+    try:
+        return path.read_text(encoding=encoding)
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"Could not decode {description} at {path} as {encoding} text.") from exc
+
+
 def format_command(command: Sequence[str]) -> str:
     return shlex.join([str(part) for part in command])
 
@@ -72,7 +98,7 @@ def find_command(candidates: Sequence[str]) -> str:
             return resolved
 
         candidate_path = Path(candidate)
-        if candidate_path.is_absolute() and candidate_path.exists():
+        if candidate_path.is_absolute() and candidate_path.is_file():
             return str(candidate_path)
 
     joined_candidates = ", ".join(candidates)
@@ -105,10 +131,11 @@ def get_missing_packages(
 
 def read_os_release(path: Path = Path("/etc/os-release")) -> dict[str, str]:
     data: dict[str, str] = {}
-    if not path.exists():
+    content = read_text_file(path, missing_ok=True, description="os-release metadata")
+    if content is None:
         return data
 
-    for raw_line in path.read_text(encoding=DEFAULT_ENCODING).splitlines():
+    for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -190,9 +217,11 @@ def capture_snapshot(path: Path) -> FileSnapshot:
     if not path.exists():
         return FileSnapshot(existed=False)
 
+    content = read_text_file(path, description="file")
+    assert content is not None
     return FileSnapshot(
         existed=True,
-        content=path.read_text(encoding=DEFAULT_ENCODING),
+        content=content,
         mode=path.stat().st_mode & 0o777,
     )
 
@@ -206,7 +235,12 @@ def restore_snapshot(path: Path, snapshot: FileSnapshot) -> None:
 
 
 def write_text_if_changed(path: Path, content: str, *, mode: int | None = None) -> bool:
-    existing_content = path.read_text(encoding=DEFAULT_ENCODING) if path.exists() else None
+    if path.exists() and path.is_dir():
+        raise RuntimeError(f"Expected file path at {path}, but found a directory.")
+
+    ensure_directory_path(path.parent, description=f"parent directory for {path}")
+
+    existing_content = read_text_file(path, missing_ok=True, description="file")
     existing_mode = (path.stat().st_mode & 0o777) if path.exists() else None
 
     content_changed = existing_content != content

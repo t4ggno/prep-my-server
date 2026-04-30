@@ -8,6 +8,7 @@ import sys
 from common import (
     FeatureResult,
     capture_snapshot,
+    ensure_directory_path,
     ensure_linux,
     ensure_root,
     find_command,
@@ -82,6 +83,7 @@ def configure_automatic_cleanup(
 ) -> FeatureResult:
     ensure_linux()
     ensure_root(dry_run=dry_run)
+    ensure_directory_path(LOCAL_LOG_DIR, description="cleanup log directory")
 
     sh_path = find_command(["sh"])
     systemctl = find_command(["systemctl"]) if is_systemd_available() else None

@@ -7,12 +7,14 @@ import sys
 
 from common import (
     FeatureResult,
+    capture_snapshot,
     ensure_linux,
     ensure_root,
     find_command,
     format_command,
     normalize_text,
     print_result,
+    restore_snapshot,
     run_checked,
     write_text_if_changed,
 )
@@ -59,14 +61,19 @@ def configure_shell_convenience(
     ensure_root(dry_run=dry_run)
 
     sh_path = find_command(["sh"])
-    bash_path = find_command(["bash"])
-    syntax_commands = [
-        [sh_path, "-n", str(profile_snippet_path)],
-        [bash_path, "-n", str(profile_snippet_path)],
-    ]
+    syntax_commands = [[sh_path, "-n", str(profile_snippet_path)]]
+    try:
+        bash_path = find_command(["bash"])
+    except RuntimeError:
+        bash_path = None
+    if bash_path:
+        syntax_commands.append([bash_path, "-n", str(profile_snippet_path)])
+
+    snippet_snapshot = capture_snapshot(profile_snippet_path)
     snippet_needs_update = (
-        not profile_snippet_path.exists()
-        or profile_snippet_path.read_text(encoding="utf-8") != PROFILE_SNIPPET_CONTENT
+        not snippet_snapshot.existed
+        or snippet_snapshot.content != PROFILE_SNIPPET_CONTENT
+        or snippet_snapshot.mode != 0o644
     )
 
     result = FeatureResult(name="shell-convenience")
@@ -78,20 +85,36 @@ def configure_shell_convenience(
             result.add_detail(f"{profile_snippet_path} already has the desired shell defaults.")
         for command in syntax_commands:
             result.add_detail(f"Would validate with: {format_command(command)}")
+        if bash_path is None:
+            result.add_warning(
+                "bash was not found, so bash-specific syntax validation would be skipped. The profile snippet still remains sh-compatible."
+            )
         return result
 
-    if write_text_if_changed(profile_snippet_path, PROFILE_SNIPPET_CONTENT, mode=0o644):
-        result.add_detail(f"Wrote {profile_snippet_path}.")
-        result.changed = True
-    else:
-        result.add_detail(f"{profile_snippet_path} already has the desired shell defaults.")
+    try:
+        if write_text_if_changed(profile_snippet_path, PROFILE_SNIPPET_CONTENT, mode=0o644):
+            result.add_detail(f"Wrote {profile_snippet_path}.")
+            result.changed = True
+        else:
+            result.add_detail(f"{profile_snippet_path} already has the desired shell defaults.")
 
-    for command in syntax_commands:
-        run_checked(command)
-    result.add_detail("Validated the profile snippet with both sh -n and bash -n.")
+        for command in syntax_commands:
+            run_checked(command)
+    except Exception:
+        restore_snapshot(profile_snippet_path, snippet_snapshot)
+        raise
+
+    if bash_path:
+        result.add_detail("Validated the profile snippet with both sh -n and bash -n.")
+    else:
+        result.add_detail("Validated the profile snippet with sh -n.")
     result.add_detail(
         "The convenience settings live in /etc/profile.d, which Bash login shells load via /etc/profile."
     )
+    if bash_path is None:
+        result.add_warning(
+            "bash was not found, so only sh -n validation was run. The snippet still keeps bash-specific behavior behind a BASH_VERSION guard."
+        )
     return result
 
 

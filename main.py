@@ -77,7 +77,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def build_tasks(args: argparse.Namespace) -> dict[str, Callable[[], FeatureResult]]:
-    banner_text = resolve_banner_text(args.banner_text, args.banner_file)
     return {
         "baseline-packages": lambda: install_baseline_packages(dry_run=args.dry_run),
         "timezone-locale": lambda: configure_timezone_locale(dry_run=args.dry_run),
@@ -95,7 +94,7 @@ def build_tasks(args: argparse.Namespace) -> dict[str, Callable[[], FeatureResul
         "ssh-speedups": lambda: configure_ssh_speedups(dry_run=args.dry_run),
         "sudo-session-cache": lambda: configure_sudo_session(dry_run=args.dry_run),
         "ssh-login-banner": lambda: configure_ssh_banner(
-            banner_text=banner_text,
+            banner_text=resolve_banner_text(args.banner_text, args.banner_file),
             dry_run=args.dry_run,
         ),
     }

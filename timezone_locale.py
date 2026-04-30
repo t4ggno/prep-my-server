@@ -18,6 +18,7 @@ from common import (
     is_systemd_available,
     normalize_text,
     print_result,
+    read_text_file,
     restore_snapshot,
     run_checked,
     try_run,
@@ -68,10 +69,11 @@ def _render_locale_gen(content: str) -> str:
 
 def _read_assignments(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
-    if not path.exists():
+    content = read_text_file(path, missing_ok=True, description="locale defaults file")
+    if content is None:
         return values
 
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -109,8 +111,9 @@ def _current_timezone() -> str | None:
             if success and output.strip():
                 return output.strip()
 
-    if TIMEZONE_PATH.exists():
-        return TIMEZONE_PATH.read_text(encoding="utf-8").strip() or None
+    timezone_content = read_text_file(TIMEZONE_PATH, missing_ok=True, description="timezone file")
+    if timezone_content is not None:
+        return timezone_content.strip() or None
     return None
 
 

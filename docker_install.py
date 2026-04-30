@@ -7,6 +7,7 @@ import sys
 
 from common import (
     FeatureResult,
+    ensure_directory_path,
     ensure_apt_system,
     ensure_linux,
     ensure_root,
@@ -17,6 +18,7 @@ from common import (
     normalize_text,
     package_is_installed,
     print_result,
+    read_text_file,
     read_os_release,
     run_checked,
     write_text_if_changed,
@@ -90,6 +92,31 @@ Signed-By: {DOCKER_KEYRING_PATH}"""
     )
 
 
+def _normalize_docker_group_user(user_name: str | None) -> str | None:
+    if user_name is None:
+        return None
+
+    normalized = user_name.strip()
+    if not normalized:
+        raise RuntimeError("The Docker group user name cannot be empty or whitespace.")
+    if normalized == "root":
+        raise RuntimeError(
+            "Refusing to add root to the docker group because root already has Docker access."
+        )
+
+    try:
+        import pwd
+    except ImportError:
+        return normalized
+
+    try:
+        pwd.getpwnam(normalized)
+    except KeyError as exc:
+        raise RuntimeError(f"User '{normalized}' does not exist on this system.") from exc
+
+    return normalized
+
+
 def install_docker(
     *,
     dry_run: bool = False,
@@ -97,6 +124,9 @@ def install_docker(
 ) -> FeatureResult:
     ensure_linux()
     ensure_root(dry_run=dry_run)
+    ensure_directory_path(DOCKER_KEYRING_DIR, description="Docker keyring directory")
+
+    docker_group_user = _normalize_docker_group_user(add_user_to_docker_group)
 
     apt_get, dpkg_query = ensure_apt_system()
     architecture = run_checked([find_command(["dpkg"]), "--print-architecture"]).stdout.strip()
@@ -117,9 +147,18 @@ def install_docker(
         for package in CONFLICTING_PACKAGES
         if package_is_installed(package, dpkg_query_path=dpkg_query)
     ]
+    if DOCKER_KEYRING_PATH.exists() and DOCKER_KEYRING_PATH.is_dir():
+        raise RuntimeError(
+            f"Expected Docker repository key file at {DOCKER_KEYRING_PATH}, but found a directory."
+        )
+
     source_needs_update = (
-        not DOCKER_SOURCE_PATH.exists()
-        or DOCKER_SOURCE_PATH.read_text(encoding="utf-8") != source_content
+        read_text_file(
+            DOCKER_SOURCE_PATH,
+            missing_ok=True,
+            description="Docker APT source file",
+        )
+        != source_content
     )
     key_needs_update = not DOCKER_KEYRING_PATH.exists() or DOCKER_KEYRING_PATH.stat().st_size == 0
 
@@ -166,9 +205,13 @@ def install_docker(
             result.add_detail(
                 f"Would run: {format_command([systemctl, 'enable', '--now', 'docker.service', 'containerd.service'])}"
             )
-        if add_user_to_docker_group:
+        else:
+            result.add_warning(
+                "Systemd was not detected, so Docker services would not be enabled automatically."
+            )
+        if docker_group_user:
             result.add_detail(
-                f"Would add {add_user_to_docker_group} to the docker group for passwordless docker CLI access."
+                f"Would add {docker_group_user} to the docker group for passwordless docker CLI access."
             )
             result.changed = True
         result.add_warning(
@@ -237,14 +280,18 @@ def install_docker(
         systemctl = find_command(["systemctl"])
         run_checked([systemctl, "enable", "--now", "docker.service", "containerd.service"])
         result.add_detail("Enabled and started docker.service and containerd.service.")
+    else:
+        result.add_warning(
+            "Systemd was not detected, so Docker services were installed but not enabled automatically."
+        )
 
-    if add_user_to_docker_group:
+    if docker_group_user:
         groupadd = find_command(["groupadd"])
         usermod = find_command(["usermod"])
         run_checked([groupadd, "-f", "docker"])
-        run_checked([usermod, "-aG", "docker", add_user_to_docker_group])
+        run_checked([usermod, "-aG", "docker", docker_group_user])
         result.add_detail(
-            f"Added {add_user_to_docker_group} to the docker group. They must log out and back in for it to apply."
+            f"Added {docker_group_user} to the docker group. They must log out and back in for it to apply."
         )
         result.changed = True
 

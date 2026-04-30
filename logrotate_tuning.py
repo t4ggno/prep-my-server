@@ -7,6 +7,8 @@ import sys
 
 from common import (
     FeatureResult,
+    capture_snapshot,
+    ensure_directory_path,
     ensure_apt_system,
     ensure_linux,
     ensure_root,
@@ -15,6 +17,7 @@ from common import (
     get_missing_packages,
     normalize_text,
     print_result,
+    restore_snapshot,
     run_checked,
     write_text_if_changed,
 )
@@ -48,12 +51,15 @@ def configure_logrotate_tuning(
 ) -> FeatureResult:
     ensure_linux()
     ensure_root(dry_run=dry_run)
+    ensure_directory_path(log_directory, description="local automation log directory")
 
     apt_get, dpkg_query = ensure_apt_system()
     missing_packages = get_missing_packages(LOGROTATE_PACKAGE, dpkg_query_path=dpkg_query)
+    config_snapshot = capture_snapshot(config_path)
     config_needs_update = (
-        not config_path.exists()
-        or config_path.read_text(encoding="utf-8") != LOGROTATE_CONFIG
+        not config_snapshot.existed
+        or config_snapshot.content != LOGROTATE_CONFIG
+        or config_snapshot.mode != 0o644
     )
     directory_needs_update = not log_directory.exists()
 
@@ -110,14 +116,19 @@ def configure_logrotate_tuning(
     else:
         result.add_detail(f"{log_directory} already exists.")
 
-    if write_text_if_changed(config_path, LOGROTATE_CONFIG, mode=0o644):
-        result.add_detail(f"Wrote {config_path}.")
-        result.changed = True
-    else:
-        result.add_detail(f"{config_path} already has the desired policy.")
+    try:
+        if write_text_if_changed(config_path, LOGROTATE_CONFIG, mode=0o644):
+            result.add_detail(f"Wrote {config_path}.")
+            result.changed = True
+        else:
+            result.add_detail(f"{config_path} already has the desired policy.")
 
-    run_checked(validate_command)
-    result.add_detail("Validated the logrotate policy with logrotate --debug.")
+        run_checked(validate_command)
+        result.add_detail("Validated the logrotate policy with logrotate --debug.")
+    except Exception:
+        restore_snapshot(config_path, config_snapshot)
+        raise
+
     return result
 
 
