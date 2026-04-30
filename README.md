@@ -14,13 +14,18 @@ It can:
 - add log rotation for its own local logs
 - apply conservative `sysctl` tuning
 - install and configure Fail2Ban for SSH
+- check that time synchronization is installed and enabled
 - schedule safe weekly APT cleanup
 - schedule automatic server reboots
 - install Docker from Docker's official repository
+- add Docker daemon log rotation defaults
+- schedule nightly Docker restarts
 - add shell convenience defaults
 - apply a few SSH responsiveness tweaks
+- audit SSH hardening posture without changing login policy
 - keep `sudo` authentication for the life of a terminal session
 - configure an SSH pre-login banner
+- optionally enable a conservative UFW firewall baseline
 
 ## What this tool targets
 
@@ -37,7 +42,9 @@ Important notes:
 - Most tasks assume an APT-based system.
 - The Docker helper supports hosts whose `/etc/os-release` reports `ID=debian` or `ID=ubuntu`.
 - The top-level default run adds the user that invoked `sudo` to the `docker` group when it can detect one; pass `--no-docker-user` to skip that.
-- The `automatic-reboot` task is disabled in the default full run. When enabled, it defaults to a daily check at `03:30` with up to `30m` randomized delay and reboots only if `/var/run/reboot-required` exists.
+- The `automatic-reboot`, `docker-nightly-restart`, and `firewall-baseline` tasks are disabled in the default full run.
+- When `automatic-reboot` is enabled, it defaults to a daily check at `03:30` with up to `30m` randomized delay and reboots only if `/var/run/reboot-required` exists.
+- When `docker-nightly-restart` is enabled, it defaults to a daily restart window at `04:30` with up to `30m` randomized delay and restarts Docker only when `docker.service` is installed and active.
 - The `timezone-locale` task still defaults to **`Europe/Berlin`**, **`de_DE.UTF-8`**, and a **German QWERTZ** keyboard layout, but those values can be changed via CLI flags or global config.
 - A dry run still needs to run on Linux, but it skips privileged writes.
 
@@ -119,29 +126,34 @@ sudo ./prep-my-server.pyz
 
 ## What happens when you run `main.py`
 
-When you run `main.py` **without positional tasks**, it executes enabled tasks in this order:
+When you run `main.py` **without positional tasks**, it evaluates tasks in this order and skips tasks that are disabled by default or config:
 
 1. `baseline-packages`
 2. `timezone-locale`
-3. `unattended-upgrades`
-4. `apt-ergonomics`
-5. `motd-status`
-6. `logrotate-tuning`
-7. `sysctl-tuning`
-8. `fail2ban-setup`
-9. `automatic-cleanup`
-10. `automatic-reboot`
-11. `docker-install`
-12. `shell-convenience`
-13. `ssh-speedups`
-14. `sudo-session-cache`
-15. `ssh-login-banner`
+3. `time-sync`
+4. `unattended-upgrades`
+5. `apt-ergonomics`
+6. `motd-status`
+7. `logrotate-tuning`
+8. `sysctl-tuning`
+9. `fail2ban-setup`
+10. `automatic-cleanup`
+11. `automatic-reboot`
+12. `docker-install`
+13. `docker-log-defaults`
+14. `docker-nightly-restart`
+15. `shell-convenience`
+16. `ssh-speedups`
+17. `ssh-hardening-audit`
+18. `sudo-session-cache`
+19. `ssh-login-banner`
+20. `firewall-baseline`
 
-`automatic-reboot` is disabled by default in the full run. Enable it persistently with `--enable automatic-reboot`, or run it for one invocation by passing `automatic-reboot` as an explicit task.
+`automatic-reboot`, `docker-nightly-restart`, and `firewall-baseline` are disabled by default in the full run. Enable them persistently with `--enable automatic-reboot`, `--enable docker-nightly-restart`, or `--enable firewall-baseline`, or run any of them for one invocation by passing it as an explicit task.
 
 If you pass one or more task names, only those tasks run. Explicit positional task names are treated as an override for that invocation, so they can run even if a task is disabled in the global default-run config.
 
-Before running tasks, the command prints a short execution config summary showing disabled tasks, whether `automatic-reboot` is enabled for default full runs, non-default task enablement, and non-default persistent settings.
+Before running tasks, the command prints a short execution config summary showing disabled tasks, default-disabled feature states, non-default task enablement, and non-default persistent settings.
 
 The top-level CLI keeps going even if one task fails; it reports the error, continues with later tasks, and returns exit code `1` at the end if any task failed.
 
@@ -167,11 +179,20 @@ sudo prep-my-server --enable unattended-upgrades
 # Enable the reboot-required timer in future default runs.
 sudo prep-my-server --enable automatic-reboot
 
+# Enable the nightly Docker restart timer in future default runs.
+sudo prep-my-server --enable docker-nightly-restart
+
+# Enable the conservative UFW firewall baseline in future default runs.
+sudo prep-my-server --enable firewall-baseline
+
 # Use an American keyboard layout in future default runs.
 sudo prep-my-server --set-config timezone-locale.keyboard-layout us
 
 # Change the automatic reboot schedule for future default runs.
 sudo prep-my-server --set-config automatic-reboot.on-calendar 'Sat *-*-* 04:00:00'
+
+# Change the nightly Docker restart schedule for future default runs.
+sudo prep-my-server --set-config docker-nightly-restart.on-calendar '*-*-* 04:30:00'
 
 # Use US locale defaults too.
 sudo prep-my-server --set-config timezone-locale.locale en_US.UTF-8
@@ -202,6 +223,7 @@ Supported task names:
 
 - `baseline-packages`
 - `timezone-locale`
+- `time-sync`
 - `unattended-upgrades`
 - `apt-ergonomics`
 - `motd-status`
@@ -211,10 +233,14 @@ Supported task names:
 - `automatic-cleanup`
 - `automatic-reboot`
 - `docker-install`
+- `docker-log-defaults`
+- `docker-nightly-restart`
 - `shell-convenience`
 - `ssh-speedups`
+- `ssh-hardening-audit`
 - `sudo-session-cache`
 - `ssh-login-banner`
+- `firewall-baseline`
 
 ### Options
 
@@ -244,6 +270,8 @@ Supported task names:
 | `--keyboard-backspace VALUE` | Override `BACKSPACE` for this run of `timezone-locale`. |
 | `--reboot-on-calendar EXPR` | Override the systemd `OnCalendar` expression for this run of `automatic-reboot`. |
 | `--reboot-randomized-delay-sec VALUE` | Override `RandomizedDelaySec` for this run of `automatic-reboot`. |
+| `--docker-restart-on-calendar EXPR` | Override the systemd `OnCalendar` expression for this run of `docker-nightly-restart`. |
+| `--docker-restart-randomized-delay-sec VALUE` | Override `RandomizedDelaySec` for this run of `docker-nightly-restart`. |
 
 Supported persistent setting keys:
 
@@ -262,6 +290,8 @@ Supported persistent setting keys:
 - `ssh-login-banner.banner-file`
 - `automatic-reboot.on-calendar`
 - `automatic-reboot.randomized-delay-sec`
+- `docker-nightly-restart.on-calendar`
+- `docker-nightly-restart.randomized-delay-sec`
 - `tasks.<task-name>.enabled`
 
 ## Task reference
@@ -456,6 +486,18 @@ Managed settings:
 
 Recommendation: review `ignoreip` after deployment if you usually connect from a fixed trusted IP.
 
+### `time-sync`
+
+Ensures that the server has a system time synchronization service.
+
+Behavior:
+
+- uses an existing `chrony` installation when present
+- otherwise installs `systemd-timesyncd` if no time sync package is detected
+- enables and starts the selected time sync service when `systemd` is available
+- runs `timedatectl set-ntp true` when `timedatectl` is available
+- reports current `timedatectl` NTP synchronization state when available
+
 ### `automatic-cleanup`
 
 Installs a safe weekly APT cleanup job.
@@ -545,6 +587,56 @@ When `docker-install` runs through the top-level `main.py` flow, it defaults to 
 
 Security note: published Docker container ports can bypass host firewall rules such as UFW or firewalld unless you manage Docker networking explicitly.
 
+### `docker-log-defaults`
+
+Adds conservative Docker daemon log rotation defaults when Docker is installed.
+
+Behavior:
+
+- reads `/etc/docker/daemon.json` if it exists
+- preserves an existing non-`json-file` log driver and warns instead of overwriting it
+- sets missing defaults for `log-driver=json-file`, `log-opts.max-size=10m`, and `log-opts.max-file=3`
+- writes valid JSON back to `/etc/docker/daemon.json`
+- does not restart Docker automatically; restart Docker later for daemon logging changes to apply
+
+### `docker-nightly-restart`
+
+Installs a scheduled nightly Docker restart timer. This task is disabled in the top-level default full run unless you enable it with config or select it explicitly.
+
+Built-in defaults:
+
+- default full-run state: disabled
+- `OnCalendar=*-*-* 04:30:00`
+- `RandomizedDelaySec=30m`
+
+Behavior:
+
+- creates `/usr/local/sbin/prep-my-server-docker-restart`
+- writes `/etc/systemd/system/prep-my-server-docker-restart.service`
+- writes `/etc/systemd/system/prep-my-server-docker-restart.timer`
+- creates `/var/log/prep-my-server`
+- logs restart attempts to `/var/log/prep-my-server/docker-restart.log`
+- validates timer values with `systemd-analyze calendar` and `systemd-analyze timespan` when available
+- validates the shell script and, when available, validates the systemd units
+- enables the timer when `systemd` is available
+- skips the restart when `docker.service` is missing or inactive
+
+This restarts `docker.service`, so running containers will briefly lose their Docker daemon connection. Use container restart policies where appropriate if you expect them to come back automatically.
+
+You can change the schedule with either CLI overrides for one run:
+
+```bash
+sudo prep-my-server --docker-restart-on-calendar '*-*-* 04:30:00' --docker-restart-randomized-delay-sec 15m docker-nightly-restart
+```
+
+Or persistent config:
+
+```bash
+sudo prep-my-server --enable docker-nightly-restart
+sudo prep-my-server --set-config docker-nightly-restart.on-calendar '*-*-* 04:30:00'
+sudo prep-my-server --set-config docker-nightly-restart.randomized-delay-sec 15m
+```
+
 ### `shell-convenience`
 
 Adds a small login-shell profile snippet.
@@ -591,6 +683,17 @@ Managed directives:
 
 `PrintMotd no` avoids duplicate MOTD output when `update-motd` is in use.
 
+### `ssh-hardening-audit`
+
+Audits SSH login policy without changing SSH configuration.
+
+Behavior:
+
+- validates `/etc/ssh/sshd_config` with `sshd -t`
+- reads effective SSH settings with `sshd -T`
+- warns when root login, password login, keyboard-interactive login, empty passwords, or disabled public-key auth look risky
+- reports effective SSH ports
+
 ### `sudo-session-cache`
 
 Configures `sudo` to stay authenticated for the life of the current terminal session.
@@ -620,6 +723,22 @@ Behavior:
 
 If you do not pass a custom banner, the default text is a direct authorized-access warning with a little dry humor.
 
+### `firewall-baseline`
+
+Installs and enables a conservative UFW firewall baseline. This task is disabled in the top-level default full run unless you enable it with config or select it explicitly.
+
+Behavior:
+
+- installs `ufw` if missing
+- validates `/etc/ssh/sshd_config` with `sshd -t`
+- reads effective SSH ports with `sshd -T` and refuses to enable the firewall if it cannot keep SSH reachable
+- allows detected SSH ports
+- detects active common web, DNS, and DHCP services with `systemctl` and allows their expected inbound ports
+- sets default incoming policy to deny and outgoing policy to allow
+- enables UFW with `ufw --force enable`
+
+Detected service allow rules are intentionally conservative. Databases are not opened automatically.
+
 ## Direct helper scripts and their parameters
 
 You can run each helper directly instead of using `main.py`.
@@ -638,10 +757,14 @@ These scripts accept just one operational flag besides help:
 | `logrotate_tuning.py` | Preview logrotate changes. |
 | `sysctl_tuning.py` | Preview sysctl changes. |
 | `fail2ban_setup.py` | Preview Fail2Ban changes. |
+| `time_sync.py` | Preview time synchronization changes. |
 | `automatic_cleanup.py` | Preview cleanup timer changes. |
+| `docker_log_defaults.py` | Preview Docker daemon log default changes. |
 | `shell_convenience.py` | Preview shell profile changes. |
 | `ssh_speedups.py` | Preview SSH tuning changes. |
+| `ssh_hardening_audit.py` | Preview SSH hardening audit checks. |
 | `sudo_session.py` | Preview sudoers changes. |
+| `firewall_baseline.py` | Preview firewall baseline changes. |
 
 Example:
 
@@ -701,6 +824,22 @@ Example:
 
 ```bash
 sudo python3 automatic_reboot.py --on-calendar '*-*-* 03:30:00' --randomized-delay-sec 30m
+```
+
+### `docker_nightly_restart.py`
+
+Parameters:
+
+| Option | Meaning |
+| --- | --- |
+| `--dry-run` | Preview Docker restart timer changes. |
+| `--on-calendar EXPR` | systemd `OnCalendar` expression for the Docker restart timer. |
+| `--randomized-delay-sec VALUE` | systemd `RandomizedDelaySec` value for the Docker restart timer. |
+
+Example:
+
+```bash
+sudo python3 docker_nightly_restart.py --on-calendar '*-*-* 04:30:00' --randomized-delay-sec 30m
 ```
 
 ### `ssh_banner.py`
@@ -802,6 +941,20 @@ Change the automatic reboot interval to weekly on Saturday night:
 ```bash
 sudo python3 main.py --enable automatic-reboot
 sudo python3 main.py --set-config automatic-reboot.on-calendar 'Sat *-*-* 04:00:00'
+```
+
+Enable the nightly Docker restart timer and preview it:
+
+```bash
+sudo python3 main.py --enable docker-nightly-restart
+sudo python3 main.py docker-nightly-restart --dry-run
+```
+
+Enable the conservative firewall baseline:
+
+```bash
+sudo python3 main.py --enable firewall-baseline
+sudo python3 main.py firewall-baseline --dry-run
 ```
 
 Skip the locale/timezone task for one invocation by choosing only the tasks you want:

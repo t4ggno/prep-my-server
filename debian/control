@@ -19,4 +19,5 @@ Depends:
 Description: Debian/Ubuntu server preparation helper
  Prepare Debian/Ubuntu servers with baseline packages, locale/timezone,
  maintenance automation, APT ergonomics, scheduled reboots, Docker,
- shell conveniences, Fail2Ban, and SSH tuning.
+ Docker log defaults, shell conveniences, Fail2Ban, firewall setup,
+ time synchronization, and SSH tuning.

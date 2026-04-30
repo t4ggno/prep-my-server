@@ -28,21 +28,27 @@ from config import (
     validate_config_task_names,
 )
 from docker_install import install_docker
+from docker_log_defaults import configure_docker_log_defaults
+from docker_nightly_restart import configure_docker_nightly_restart
 from fail2ban_setup import configure_fail2ban
+from firewall_baseline import configure_firewall_baseline
 from logrotate_tuning import configure_logrotate_tuning
 from motd_status import configure_motd_status
 from packages_baseline import install_baseline_packages
 from shell_convenience import configure_shell_convenience
 from ssh_banner import configure_ssh_banner, resolve_banner_text
+from ssh_hardening_audit import audit_ssh_hardening
 from ssh_speedups import configure_ssh_speedups
 from sudo_session import configure_sudo_session
 from sysctl_tuning import configure_sysctl_tuning
+from time_sync import configure_time_sync
 from timezone_locale import configure_timezone_locale
 from unattended_upgrades import enable_unattended_upgrades
 
 TASK_NAMES: tuple[str, ...] = (
     "baseline-packages",
     "timezone-locale",
+    "time-sync",
     "unattended-upgrades",
     "apt-ergonomics",
     "motd-status",
@@ -52,10 +58,14 @@ TASK_NAMES: tuple[str, ...] = (
     "automatic-cleanup",
     "automatic-reboot",
     "docker-install",
+    "docker-log-defaults",
+    "docker-nightly-restart",
     "shell-convenience",
     "ssh-speedups",
+    "ssh-hardening-audit",
     "sudo-session-cache",
     "ssh-login-banner",
+    "firewall-baseline",
 )
 
 
@@ -63,8 +73,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Prepare a Debian/Ubuntu Linux server with baseline packages, locale and timezone, "
-            "maintenance automation, scheduled reboots, APT ergonomics, Docker, "
-            "shell conveniences, and SSH improvements."
+            "maintenance automation, scheduled reboots, scheduled Docker restarts, "
+            "APT ergonomics, Docker, "
+            "firewall setup, time sync, shell conveniences, and SSH improvements."
         ),
     )
     parser.add_argument(
@@ -190,6 +201,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--reboot-randomized-delay-sec",
         help="systemd RandomizedDelaySec value for automatic-reboot, for example: 30m.",
+    )
+    parser.add_argument(
+        "--docker-restart-on-calendar",
+        help=(
+            "systemd OnCalendar expression for docker-nightly-restart, "
+            "for example: '*-*-* 04:30:00'."
+        ),
+    )
+    parser.add_argument(
+        "--docker-restart-randomized-delay-sec",
+        help="systemd RandomizedDelaySec value for docker-nightly-restart, for example: 30m.",
     )
     return parser
 
@@ -323,6 +345,7 @@ def build_tasks(
         "logrotate-tuning": lambda: configure_logrotate_tuning(dry_run=args.dry_run),
         "sysctl-tuning": lambda: configure_sysctl_tuning(dry_run=args.dry_run),
         "fail2ban-setup": lambda: configure_fail2ban(dry_run=args.dry_run),
+        "time-sync": lambda: configure_time_sync(dry_run=args.dry_run),
         "automatic-cleanup": lambda: configure_automatic_cleanup(dry_run=args.dry_run),
         "automatic-reboot": lambda: configure_automatic_reboot(
             dry_run=args.dry_run,
@@ -343,13 +366,31 @@ def build_tasks(
             dry_run=args.dry_run,
             add_user_to_docker_group=docker_group_user,
         ),
+        "docker-log-defaults": lambda: configure_docker_log_defaults(dry_run=args.dry_run),
+        "docker-nightly-restart": lambda: configure_docker_nightly_restart(
+            dry_run=args.dry_run,
+            on_calendar=arg_or_setting(
+                args,
+                "docker_restart_on_calendar",
+                config,
+                "docker-nightly-restart.on-calendar",
+            ),
+            randomized_delay_sec=arg_or_setting(
+                args,
+                "docker_restart_randomized_delay_sec",
+                config,
+                "docker-nightly-restart.randomized-delay-sec",
+            ),
+        ),
         "shell-convenience": lambda: configure_shell_convenience(dry_run=args.dry_run),
         "ssh-speedups": lambda: configure_ssh_speedups(dry_run=args.dry_run),
+        "ssh-hardening-audit": lambda: audit_ssh_hardening(dry_run=args.dry_run),
         "sudo-session-cache": lambda: configure_sudo_session(dry_run=args.dry_run),
         "ssh-login-banner": lambda: configure_ssh_banner(
             banner_text=resolve_banner_text_from_config(args, config),
             dry_run=args.dry_run,
         ),
+        "firewall-baseline": lambda: configure_firewall_baseline(dry_run=args.dry_run),
     }
 
 
@@ -391,6 +432,22 @@ def _format_disabled_tasks(task_names: list[str]) -> str:
     )
 
 
+def _format_default_disabled_feature_states(
+    config: dict[str, object],
+    selected_task_names: list[str],
+    task_state_overrides: dict[str, bool],
+) -> str:
+    states: list[str] = []
+    for task_name in TASK_NAMES:
+        if task_default_enabled(task_name):
+            continue
+        enabled = task_is_enabled(config, task_name)
+        source = "config override" if task_name in task_state_overrides else "default"
+        selection = "selected" if task_name in selected_task_names else "not selected"
+        states.append(f"{task_name}={_enabled_label(enabled)} ({source}; {selection})")
+    return ", ".join(states) if states else "none"
+
+
 def print_execution_config(
     args: argparse.Namespace,
     config: dict[str, object],
@@ -399,15 +456,6 @@ def print_execution_config(
 ) -> None:
     task_state_overrides = non_default_task_states(config, TASK_NAMES)
     setting_overrides = non_default_settings(config)
-    automatic_reboot_enabled = task_is_enabled(config, "automatic-reboot")
-    automatic_reboot_source = (
-        "config override" if "automatic-reboot" in task_state_overrides else "default"
-    )
-    automatic_reboot_selection = (
-        "selected for this run"
-        if "automatic-reboot" in selected_task_names
-        else "not selected for this run"
-    )
 
     print("Execution config:")
     if args.tasks:
@@ -419,9 +467,12 @@ def print_execution_config(
     else:
         print(f"  - Disabled tasks: {_format_disabled_tasks(skipped_task_names)}")
     print(
-        "  - automatic-reboot: "
-        f"{_enabled_label(automatic_reboot_enabled)} for default full runs "
-        f"({automatic_reboot_source}); {automatic_reboot_selection}."
+        "  - Default-disabled features: "
+        + _format_default_disabled_feature_states(
+            config,
+            selected_task_names,
+            task_state_overrides,
+        )
     )
     print(f"  - Non-default task enablement: {_format_task_states(task_state_overrides)}")
     print(f"  - Non-default settings: {_format_key_values(setting_overrides)}")

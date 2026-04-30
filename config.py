@@ -11,6 +11,8 @@ CONFIG_PATH = Path("/etc/prep-my-server/config.json")
 CONFIG_VERSION = 1
 TASK_ENABLED_DEFAULTS: dict[str, bool] = {
     "automatic-reboot": False,
+    "docker-nightly-restart": False,
+    "firewall-baseline": False,
 }
 SETTING_DEFAULTS: dict[str, Any] = {
     "timezone-locale.timezone": "Europe/Berlin",
@@ -28,6 +30,8 @@ SETTING_DEFAULTS: dict[str, Any] = {
     "ssh-login-banner.banner-file": None,
     "automatic-reboot.on-calendar": "*-*-* 03:30:00",
     "automatic-reboot.randomized-delay-sec": "30m",
+    "docker-nightly-restart.on-calendar": "*-*-* 04:30:00",
+    "docker-nightly-restart.randomized-delay-sec": "30m",
 }
 BOOLEAN_SETTING_KEYS = {
     "docker-install.auto-sudo-user",
