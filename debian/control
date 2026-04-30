@@ -1,0 +1,21 @@
+Source: prep-my-server
+Section: admin
+Priority: optional
+Maintainer: GitHub Actions <41898282+github-actions[bot]@users.noreply.github.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ python3 (>= 3.10)
+Standards-Version: 4.7.4.1
+Rules-Requires-Root: no
+X-Python3-Version: >= 3.10
+
+Package: prep-my-server
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ python3 (>= 3.10)
+Description: Debian/Ubuntu server preparation helper
+ Prepare Debian/Ubuntu servers with baseline packages, locale/timezone,
+ maintenance automation, Docker, shell conveniences, Fail2Ban, and SSH tuning.

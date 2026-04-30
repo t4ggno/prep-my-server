@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+from __future__ import annotations
+
+import sys
+
+sys.path.insert(0, "/usr/share/prep-my-server")
+
+from main import main
+
+raise SystemExit(main())

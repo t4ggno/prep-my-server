@@ -1,0 +1,16 @@
+debian/prep-my-server usr/bin/
+automatic_cleanup.py usr/share/prep-my-server/
+common.py usr/share/prep-my-server/
+docker_install.py usr/share/prep-my-server/
+fail2ban_setup.py usr/share/prep-my-server/
+logrotate_tuning.py usr/share/prep-my-server/
+main.py usr/share/prep-my-server/
+motd_status.py usr/share/prep-my-server/
+packages_baseline.py usr/share/prep-my-server/
+shell_convenience.py usr/share/prep-my-server/
+ssh_banner.py usr/share/prep-my-server/
+ssh_speedups.py usr/share/prep-my-server/
+sudo_session.py usr/share/prep-my-server/
+sysctl_tuning.py usr/share/prep-my-server/
+timezone_locale.py usr/share/prep-my-server/
+unattended_upgrades.py usr/share/prep-my-server/
