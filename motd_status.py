@@ -61,6 +61,16 @@ else
     disk_usage="n/a"
 fi
 
+reboot_required="no"
+if [ -f /var/run/reboot-required ]; then
+    reboot_required="yes"
+fi
+
+failed_units="n/a"
+if command_exists systemctl && systemctl list-units >/dev/null 2>&1; then
+    failed_units="$(systemctl --failed --no-legend --plain 2>/dev/null | awk 'END {print NR + 0}')"
+fi
+
 updates_pending="n/a"
 if command_exists apt-get; then
     updates_pending="$(apt-get -s upgrade 2>/dev/null | awk '/^Inst / {count++} END {print count + 0}')"
@@ -75,6 +85,8 @@ printf 'Uptime: %s\n' "$uptime_human"
 printf 'Load: %s\n' "$load_average"
 printf 'Memory: %s\n' "$memory_usage"
 printf 'Disk (/): %s\n' "$disk_usage"
+printf 'Reboot required: %s\n' "$reboot_required"
+printf 'Failed systemd units: %s\n' "$failed_units"
 printf 'Pending APT upgrades: %s\n' "$updates_pending"
 """
 )

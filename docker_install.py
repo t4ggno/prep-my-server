@@ -117,6 +117,22 @@ def _normalize_docker_group_user(user_name: str | None) -> str | None:
     return normalized
 
 
+def _user_in_group(user_name: str, group_name: str) -> bool:
+    try:
+        import grp
+        import pwd
+    except ImportError:
+        return False
+
+    try:
+        user_record = pwd.getpwnam(user_name)
+        group_record = grp.getgrnam(group_name)
+    except KeyError:
+        return False
+
+    return group_record.gr_gid == user_record.pw_gid or user_name in group_record.gr_mem
+
+
 def install_docker(
     *,
     dry_run: bool = False,
@@ -210,10 +226,17 @@ def install_docker(
                 "Systemd was not detected, so Docker services would not be enabled automatically."
             )
         if docker_group_user:
+            if _user_in_group(docker_group_user, "docker"):
+                result.add_detail(f"{docker_group_user} already has docker group access.")
+            else:
+                result.add_detail(
+                    f"Would add {docker_group_user} to the docker group for passwordless docker CLI access."
+                )
+                result.changed = True
+        else:
             result.add_detail(
-                f"Would add {docker_group_user} to the docker group for passwordless docker CLI access."
+                "No Docker group user was requested; Docker CLI access will stay root-only."
             )
-            result.changed = True
         result.add_warning(
             "Docker-published container ports bypass UFW/firewalld rules unless you manage them explicitly via Docker's iptables integration."
         )
@@ -288,12 +311,19 @@ def install_docker(
     if docker_group_user:
         groupadd = find_command(["groupadd"])
         usermod = find_command(["usermod"])
-        run_checked([groupadd, "-f", "docker"])
-        run_checked([usermod, "-aG", "docker", docker_group_user])
+        if _user_in_group(docker_group_user, "docker"):
+            result.add_detail(f"{docker_group_user} already has docker group access.")
+        else:
+            run_checked([groupadd, "-f", "docker"])
+            run_checked([usermod, "-aG", "docker", docker_group_user])
+            result.add_detail(
+                f"Added {docker_group_user} to the docker group. They must log out and back in for it to apply."
+            )
+            result.changed = True
+    else:
         result.add_detail(
-            f"Added {docker_group_user} to the docker group. They must log out and back in for it to apply."
+            "No Docker group user was requested; Docker CLI access remains root-only."
         )
-        result.changed = True
 
     result.add_warning(
         "Docker-published container ports bypass UFW/firewalld rules unless you manage them explicitly via Docker's iptables integration."

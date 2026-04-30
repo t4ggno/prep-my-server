@@ -7,12 +7,15 @@ It can:
 
 - install a baseline package set
 - set timezone, locale, and keyboard defaults
+- persist global task and setting overrides in `/etc/prep-my-server/config.json`
 - enable unattended upgrades
+- reduce routine APT and `needrestart` prompts
 - add a cached login status block for `update-motd`
 - add log rotation for its own local logs
 - apply conservative `sysctl` tuning
 - install and configure Fail2Ban for SSH
 - schedule safe weekly APT cleanup
+- schedule automatic server reboots
 - install Docker from Docker's official repository
 - add shell convenience defaults
 - apply a few SSH responsiveness tweaks
@@ -33,7 +36,9 @@ Important notes:
 - The scripts intentionally refuse to run on non-Linux systems.
 - Most tasks assume an APT-based system.
 - The Docker helper supports hosts whose `/etc/os-release` reports `ID=debian` or `ID=ubuntu`.
-- The `timezone-locale` task is opinionated: it sets **`Europe/Berlin`**, **`de_DE.UTF-8`**, and a **German QWERTZ** keyboard layout.
+- The top-level default run adds the user that invoked `sudo` to the `docker` group when it can detect one; pass `--no-docker-user` to skip that.
+- The `automatic-reboot` task defaults to a daily reboot at `03:30` with up to `30m` randomized delay.
+- The `timezone-locale` task still defaults to **`Europe/Berlin`**, **`de_DE.UTF-8`**, and a **German QWERTZ** keyboard layout, but those values can be changed via CLI flags or global config.
 - A dry run still needs to run on Linux, but it skips privileged writes.
 
 ## Quick start on Linux
@@ -114,25 +119,67 @@ sudo ./prep-my-server.pyz
 
 ## What happens when you run `main.py`
 
-When you run `main.py` **without positional tasks**, it executes all tasks in this order:
+When you run `main.py` **without positional tasks**, it executes enabled tasks in this order:
 
 1. `baseline-packages`
 2. `timezone-locale`
 3. `unattended-upgrades`
-4. `motd-status`
-5. `logrotate-tuning`
-6. `sysctl-tuning`
-7. `fail2ban-setup`
-8. `automatic-cleanup`
-9. `docker-install`
-10. `shell-convenience`
-11. `ssh-speedups`
-12. `sudo-session-cache`
-13. `ssh-login-banner`
+4. `apt-ergonomics`
+5. `motd-status`
+6. `logrotate-tuning`
+7. `sysctl-tuning`
+8. `fail2ban-setup`
+9. `automatic-cleanup`
+10. `automatic-reboot`
+11. `docker-install`
+12. `shell-convenience`
+13. `ssh-speedups`
+14. `sudo-session-cache`
+15. `ssh-login-banner`
 
-If you pass one or more task names, only those tasks run.
+If you pass one or more task names, only those tasks run. Explicit positional task names are treated as an override for that invocation, so they can run even if a task is disabled in the global default-run config.
 
 The top-level CLI keeps going even if one task fails; it reports the error, continues with later tasks, and returns exit code `1` at the end if any task failed.
+
+## Global config
+
+The top-level command reads persistent overrides from:
+
+```text
+/etc/prep-my-server/config.json
+```
+
+The config file is optional. When it does not exist, the built-in defaults are used. Config commands write only the overrides you choose.
+
+Examples:
+
+```bash
+# Run the normal full bundle, but skip unattended upgrades from now on.
+sudo prep-my-server --disable unattended-upgrades
+
+# Re-enable it later.
+sudo prep-my-server --enable unattended-upgrades
+
+# Use an American keyboard layout in future default runs.
+sudo prep-my-server --set-config timezone-locale.keyboard-layout us
+
+# Change the automatic reboot schedule for future default runs.
+sudo prep-my-server --set-config automatic-reboot.on-calendar 'Sat *-*-* 04:00:00'
+
+# Use US locale defaults too.
+sudo prep-my-server --set-config timezone-locale.locale en_US.UTF-8
+sudo prep-my-server --set-config timezone-locale.language en_US:en
+sudo prep-my-server --set-config timezone-locale.lc-time en_US.UTF-8
+
+# Return one value to the built-in default.
+sudo prep-my-server --unset-config timezone-locale.keyboard-layout
+
+# Inspect current overrides and supported keys.
+sudo prep-my-server --show-config
+prep-my-server --list-config-keys
+```
+
+You can also use `--set-config tasks.unattended-upgrades.enabled false`; `--disable unattended-upgrades` is just the shorter form.
 
 ## Main command parameters
 
@@ -149,11 +196,13 @@ Supported task names:
 - `baseline-packages`
 - `timezone-locale`
 - `unattended-upgrades`
+- `apt-ergonomics`
 - `motd-status`
 - `logrotate-tuning`
 - `sysctl-tuning`
 - `fail2ban-setup`
 - `automatic-cleanup`
+- `automatic-reboot`
 - `docker-install`
 - `shell-convenience`
 - `ssh-speedups`
@@ -166,13 +215,51 @@ Supported task names:
 | --- | --- |
 | `-h`, `--help` | Show help and exit. |
 | `--dry-run` | Preview actions without changing the server. |
+| `--config-file FILE` | Use a different config file path instead of `/etc/prep-my-server/config.json`. |
+| `--show-config` | Print the current global config and exit unless task names are also passed. |
+| `--list-config-keys` | List supported config keys and exit unless task names are also passed. |
+| `--set-config KEY VALUE` | Persist a config value. Can be repeated. |
+| `--unset-config KEY` | Remove a config override so the built-in default is used again. Can be repeated. |
+| `--disable TASK` | Persistently disable a task in the default full run. Can be repeated. |
+| `--enable TASK` | Persistently enable a task in the default full run. Can be repeated. |
 | `--banner-text TEXT` | Use custom SSH banner text. Only matters when `ssh-login-banner` runs. Mutually exclusive with `--banner-file`. |
 | `--banner-file FILE` | Read SSH banner text from a file. Only matters when `ssh-login-banner` runs. Mutually exclusive with `--banner-text`. |
-| `--docker-user USER` | After Docker installation, add `USER` to the `docker` group. Only matters when `docker-install` runs. |
+| `--docker-user USER` | After Docker installation, add `USER` to the `docker` group. If omitted, the full main flow uses the user that invoked `sudo` when one can be detected. Only matters when `docker-install` runs. |
+| `--no-docker-user` | Do not add any user to the `docker` group. Only matters when `docker-install` runs. |
+| `--timezone TIMEZONE` | Override the timezone for this run of `timezone-locale`. |
+| `--locale LOCALE` | Override the default locale for this run of `timezone-locale`. |
+| `--language LANGUAGE` | Override the `LANGUAGE` value for this run of `timezone-locale`. |
+| `--lc-time LC_TIME` | Override the `LC_TIME` value for this run of `timezone-locale`. |
+| `--keyboard-model MODEL` | Override `XKBMODEL` for this run of `timezone-locale`. |
+| `--keyboard-layout LAYOUT` | Override `XKBLAYOUT` for this run of `timezone-locale`. |
+| `--keyboard-variant VARIANT` | Override `XKBVARIANT` for this run of `timezone-locale`. |
+| `--keyboard-options OPTIONS` | Override `XKBOPTIONS` for this run of `timezone-locale`. |
+| `--keyboard-backspace VALUE` | Override `BACKSPACE` for this run of `timezone-locale`. |
+| `--reboot-on-calendar EXPR` | Override the systemd `OnCalendar` expression for this run of `automatic-reboot`. |
+| `--reboot-randomized-delay-sec VALUE` | Override `RandomizedDelaySec` for this run of `automatic-reboot`. |
+
+Supported persistent setting keys:
+
+- `timezone-locale.timezone`
+- `timezone-locale.locale`
+- `timezone-locale.language`
+- `timezone-locale.lc-time`
+- `timezone-locale.keyboard-model`
+- `timezone-locale.keyboard-layout`
+- `timezone-locale.keyboard-variant`
+- `timezone-locale.keyboard-options`
+- `timezone-locale.keyboard-backspace`
+- `docker-install.user`
+- `docker-install.auto-sudo-user`
+- `ssh-login-banner.banner-text`
+- `ssh-login-banner.banner-file`
+- `automatic-reboot.on-calendar`
+- `automatic-reboot.randomized-delay-sec`
+- `tasks.<task-name>.enabled`
 
 ## Task reference
 
-This is the practical “what does it actually touch?” section.
+This is the practical "what does it actually touch?" section.
 
 ### `baseline-packages`
 
@@ -181,18 +268,26 @@ Installs a baseline set of common server tools if they are missing:
 - `bash-completion`
 - `ca-certificates`
 - `curl`
+- `dnsutils`
 - `git`
 - `htop`
+- `iproute2`
+- `iputils-ping`
 - `jq`
 - `less`
 - `lsof`
 - `ncdu`
+- `netcat-openbsd`
+- `ripgrep`
 - `rsync`
+- `socat`
+- `sudo`
 - `tmux`
 - `tree`
 - `unzip`
 - `vim`
 - `wget`
+- `zip`
 
 Behavior:
 
@@ -202,25 +297,36 @@ Behavior:
 
 ### `timezone-locale`
 
-Applies opinionated regional defaults for this toolkit's preferred environment:
+Applies timezone, locale, and console keyboard defaults.
+
+Built-in defaults:
 
 - timezone: `Europe/Berlin`
 - locale: `de_DE.UTF-8`
 - language preference: `de_DE:de`
 - `LC_TIME`: `de_DE.UTF-8`
-- keyboard layout: German QWERTZ
+- keyboard layout: German QWERTZ (`de`)
+
+Common US override:
+
+```bash
+sudo prep-my-server --set-config timezone-locale.keyboard-layout us
+sudo prep-my-server --set-config timezone-locale.locale en_US.UTF-8
+sudo prep-my-server --set-config timezone-locale.language en_US:en
+sudo prep-my-server --set-config timezone-locale.lc-time en_US.UTF-8
+```
 
 Behavior:
 
 - installs `console-setup`, `keyboard-configuration`, and `locales` if needed
-- ensures `de_DE.UTF-8 UTF-8` is enabled in `/etc/locale.gen`
+- ensures the configured locale is enabled in `/etc/locale.gen`
 - runs `locale-gen`
 - updates `/etc/locale.conf` or `/etc/default/locale`
 - updates `/etc/default/keyboard`
 - sets the timezone with `timedatectl` when available, otherwise updates `/etc/timezone` and `/etc/localtime`
 - applies the keyboard layout immediately with `setupcon --keyboard-only` when possible
 
-If you do **not** want German locale/keyboard defaults, skip this task.
+If you do **not** want the built-in locale/keyboard defaults, change the config values or skip this task.
 
 ### `unattended-upgrades`
 
@@ -236,6 +342,28 @@ Written config:
 
 - `APT::Periodic::Update-Package-Lists "1";`
 - `APT::Periodic::Unattended-Upgrade "1";`
+
+### `apt-ergonomics`
+
+Adds small APT and `needrestart` drop-ins that make routine upgrades less interactive.
+
+Behavior:
+
+- writes `/etc/apt/apt.conf.d/90prep-my-server-ergonomics`
+- writes `/etc/needrestart/conf.d/90-prep-my-server.conf`
+- validates APT configuration with `apt-config dump`
+- validates the `needrestart` drop-in with `perl -c` when Perl is available
+
+Managed settings:
+
+- asks `dpkg` to use the default conffile action when available
+- keeps the locally installed conffile when no default action is available
+- shows upgraded packages during `apt-get upgrade`
+- enables colored APT output
+- makes `needrestart` restart affected services automatically
+- disables interactive kernel and microcode reminder prompts from `needrestart`
+
+If `needrestart` is not installed yet, the drop-in is still written and will apply if the package is installed later.
 
 ### `motd-status`
 
@@ -257,6 +385,8 @@ The status output includes:
 - load average
 - memory usage
 - root filesystem usage
+- reboot-required status
+- failed systemd unit count
 - pending APT upgrades
 
 ### `logrotate-tuning`
@@ -340,6 +470,38 @@ It runs:
 
 It deliberately does **not** run `apt-get clean` and does not do purge-style removal.
 
+### `automatic-reboot`
+
+Installs a scheduled automatic reboot timer.
+
+Built-in defaults:
+
+- `OnCalendar=*-*-* 03:30:00`
+- `RandomizedDelaySec=30m`
+
+Behavior:
+
+- creates `/usr/local/sbin/prep-my-server-reboot`
+- writes `/etc/systemd/system/prep-my-server-reboot.service`
+- writes `/etc/systemd/system/prep-my-server-reboot.timer`
+- creates `/var/log/prep-my-server`
+- logs reboot attempts to `/var/log/prep-my-server/reboot.log`
+- validates the shell script and, when available, validates the systemd units
+- enables the timer when `systemd` is available
+
+You can change the schedule with either CLI overrides for one run:
+
+```bash
+sudo prep-my-server --reboot-on-calendar 'Sat *-*-* 04:00:00' --reboot-randomized-delay-sec 15m
+```
+
+Or persistent config:
+
+```bash
+sudo prep-my-server --set-config automatic-reboot.on-calendar 'Sat *-*-* 04:00:00'
+sudo prep-my-server --set-config automatic-reboot.randomized-delay-sec 15m
+```
+
 ### `docker-install`
 
 Installs Docker from Docker's official APT repository.
@@ -368,6 +530,8 @@ Behavior:
 - enables `docker.service` and `containerd.service` when `systemd` is available
 - optionally adds a user to the `docker` group
 
+When `docker-install` runs through the top-level `main.py` flow, it defaults to adding the user that invoked `sudo` when one can be detected. Pass `--no-docker-user` to keep Docker root-only.
+
 Security note: published Docker container ports can bypass host firewall rules such as UFW or firewalld unless you manage Docker networking explicitly.
 
 ### `shell-convenience`
@@ -385,10 +549,15 @@ It sets:
 - `EDITOR=vim`
 - `VISUAL=vim`
 - `PAGER=less`
+- `GIT_PAGER=less`
 - `LESS=-FRX`
+- `SYSTEMD_PAGER=cat`
+- `SYSTEMD_COLORS=1`
 - bigger shell history
 - history timestamps
-- handy Bash aliases like `l`, `la`, `ll`, and `..`
+- handy Bash aliases like `l`, `la`, `ll`, `..`, `ports`, and `please`
+- human-readable `df`, `du`, and `free` aliases
+- case-insensitive Bash completion when readline supports it
 - Bash completion when available
 
 ### `ssh-speedups`
@@ -438,7 +607,7 @@ Behavior:
 - validates the SSH configuration
 - reloads the SSH service when possible
 
-If you do not pass a custom banner, the default text is a standard authorized-access warning banner.
+If you do not pass a custom banner, the default text is a direct authorized-access warning with a little dry humor.
 
 ## Direct helper scripts and their parameters
 
@@ -452,8 +621,8 @@ These scripts accept just one operational flag besides help:
 | Script | Meaning of `--dry-run` |
 | --- | --- |
 | `packages_baseline.py` | Preview package installation changes. |
-| `timezone_locale.py` | Preview locale, timezone, and keyboard changes. |
 | `unattended_upgrades.py` | Preview unattended-upgrade changes. |
+| `apt_ergonomics.py` | Preview APT and needrestart ergonomics changes. |
 | `motd_status.py` | Preview MOTD script changes. |
 | `logrotate_tuning.py` | Preview logrotate changes. |
 | `sysctl_tuning.py` | Preview sysctl changes. |
@@ -469,6 +638,29 @@ Example:
 sudo python3 fail2ban_setup.py --dry-run
 ```
 
+### `timezone_locale.py`
+
+Parameters:
+
+| Option | Meaning |
+| --- | --- |
+| `--dry-run` | Preview locale, timezone, and keyboard changes. |
+| `--timezone TIMEZONE` | Timezone to set. |
+| `--locale LOCALE` | Locale to generate and set. |
+| `--language LANGUAGE` | `LANGUAGE` value to set. |
+| `--lc-time LC_TIME` | `LC_TIME` value to set. |
+| `--keyboard-model MODEL` | `XKBMODEL` value to set. |
+| `--keyboard-layout LAYOUT` | `XKBLAYOUT` value to set. |
+| `--keyboard-variant VARIANT` | `XKBVARIANT` value to set. |
+| `--keyboard-options OPTIONS` | `XKBOPTIONS` value to set. |
+| `--keyboard-backspace VALUE` | `BACKSPACE` value to set. |
+
+Example:
+
+```bash
+sudo python3 timezone_locale.py --keyboard-layout us --locale en_US.UTF-8 --language en_US:en --lc-time en_US.UTF-8
+```
+
 ### `docker_install.py`
 
 Parameters:
@@ -482,6 +674,22 @@ Example:
 
 ```bash
 sudo python3 docker_install.py --add-user-to-docker-group alice
+```
+
+### `automatic_reboot.py`
+
+Parameters:
+
+| Option | Meaning |
+| --- | --- |
+| `--dry-run` | Preview automatic reboot timer changes. |
+| `--on-calendar EXPR` | systemd `OnCalendar` expression for the reboot timer. |
+| `--randomized-delay-sec VALUE` | systemd `RandomizedDelaySec` value for the reboot timer. |
+
+Example:
+
+```bash
+sudo python3 automatic_reboot.py --on-calendar '*-*-* 03:30:00' --randomized-delay-sec 30m
 ```
 
 ### `ssh_banner.py`
@@ -509,9 +717,9 @@ It exists for people who want to build a distributable artifact from the reposit
 
 `build_artifacts.py` supports these artifact types:
 
-- `pyz` — build an executable zipapp
-- `pyinstaller` — build a self-contained Linux executable
-- `deb` — build a Debian package
+- `pyz` - build an executable zipapp
+- `pyinstaller` - build a self-contained Linux executable
+- `deb` - build a Debian package
 
 Parameters:
 
@@ -540,7 +748,7 @@ Notes:
 
 ## Safety and behavior notes
 
-- The toolkit is designed to be **idempotent**: rerunning it should mostly result in “already configured” outcomes instead of duplicate configuration.
+- The toolkit is designed to be **idempotent**: rerunning it should mostly result in "already configured" outcomes instead of duplicate configuration.
 - Several tasks validate generated config before reloading services.
 - Several file-writing tasks snapshot existing files and restore them if validation fails.
 - If `systemd` is not available, related files may still be written, but timers/services may not be enabled automatically.
@@ -566,7 +774,25 @@ Run only Docker setup and shell conveniences:
 sudo python3 main.py docker-install shell-convenience --docker-user alice
 ```
 
-Skip the German locale/timezone task by choosing only the tasks you want:
+Persistently skip unattended upgrades in the default full run:
+
+```bash
+sudo python3 main.py --disable unattended-upgrades
+```
+
+Use an American keyboard layout in future default runs:
+
+```bash
+sudo python3 main.py --set-config timezone-locale.keyboard-layout us
+```
+
+Change the automatic reboot interval to weekly on Saturday night:
+
+```bash
+sudo python3 main.py --set-config automatic-reboot.on-calendar 'Sat *-*-* 04:00:00'
+```
+
+Skip the locale/timezone task for one invocation by choosing only the tasks you want:
 
 ```bash
 sudo python3 main.py baseline-packages unattended-upgrades motd-status fail2ban-setup

@@ -22,8 +22,11 @@ DEFAULT_DEB_MAINTAINER = "GitHub Actions <41898282+github-actions[bot]@users.nor
 DEFAULT_PYINSTALLER_RUNTIME_TMPDIR = "/var/tmp"
 DEBIAN_LAUNCHER = APP_NAME
 MODULE_FILES = (
+    "apt_ergonomics.py",
     "automatic_cleanup.py",
+    "automatic_reboot.py",
     "common.py",
+    "config.py",
     "docker_install.py",
     "fail2ban_setup.py",
     "logrotate_tuning.py",

@@ -27,7 +27,13 @@ from common import (
 
 TIMEZONE = "Europe/Berlin"
 DEFAULT_LOCALE = "de_DE.UTF-8"
-LOCALE_GEN_ENTRY = f"{DEFAULT_LOCALE} UTF-8"
+DEFAULT_LANGUAGE = "de_DE:de"
+DEFAULT_LC_TIME = DEFAULT_LOCALE
+DEFAULT_KEYBOARD_MODEL = "pc105"
+DEFAULT_KEYBOARD_LAYOUT = "de"
+DEFAULT_KEYBOARD_VARIANT = ""
+DEFAULT_KEYBOARD_OPTIONS = ""
+DEFAULT_KEYBOARD_BACKSPACE = "guess"
 LOCALE_GEN_PATH = Path("/etc/locale.gen")
 LOCALE_DEFAULTS_CANDIDATES = (Path("/etc/locale.conf"), Path("/etc/default/locale"))
 KEYBOARD_PATH = Path("/etc/default/keyboard")
@@ -38,31 +44,61 @@ SETUP_PACKAGES: tuple[str, ...] = (
     "keyboard-configuration",
     "locales",
 )
-KEYBOARD_CONTENT = normalize_text(
-    '''# Managed by prep-my-server.
-XKBMODEL="pc105"
-XKBLAYOUT="de"
-XKBVARIANT=""
-XKBOPTIONS=""
-BACKSPACE="guess"'''
-)
-_LOCALE_GEN_RE = re.compile(r"^\s*#?\s*de_DE\.UTF-8\s+UTF-8\s*$")
 
 
-def _render_locale_gen(content: str) -> str:
+def _require_non_empty(value: str, *, name: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise RuntimeError(f"{name} cannot be empty.")
+    return normalized
+
+
+def _locale_gen_entry(locale: str) -> str:
+    return f"{locale} UTF-8"
+
+
+def _locale_gen_re(locale: str) -> re.Pattern[str]:
+    return re.compile(rf"^\s*#?\s*{re.escape(locale)}\s+UTF-8\s*$")
+
+
+def _keyboard_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _keyboard_content(
+    *,
+    model: str,
+    layout: str,
+    variant: str,
+    options: str,
+    backspace: str,
+) -> str:
+    return normalize_text(
+        f'''# Managed by prep-my-server.
+XKBMODEL="{_keyboard_value(model)}"
+XKBLAYOUT="{_keyboard_value(layout)}"
+XKBVARIANT="{_keyboard_value(variant)}"
+XKBOPTIONS="{_keyboard_value(options)}"
+BACKSPACE="{_keyboard_value(backspace)}"'''
+    )
+
+
+def _render_locale_gen(content: str, *, locale: str) -> str:
+    locale_gen_entry = _locale_gen_entry(locale)
+    locale_gen_re = _locale_gen_re(locale)
     lines = content.splitlines()
     replaced = False
 
     for index, line in enumerate(lines):
-        if _LOCALE_GEN_RE.match(line):
-            lines[index] = LOCALE_GEN_ENTRY
+        if locale_gen_re.match(line):
+            lines[index] = locale_gen_entry
             replaced = True
             break
 
     if not replaced:
         if lines and lines[-1].strip():
             lines.append("")
-        lines.append(LOCALE_GEN_ENTRY)
+        lines.append(locale_gen_entry)
 
     return normalize_text("\n".join(lines))
 
@@ -89,12 +125,18 @@ def _locale_defaults_path() -> Path:
     return LOCALE_DEFAULTS_CANDIDATES[0]
 
 
-def _locale_defaults_need_update(locale_defaults_path: Path) -> bool:
+def _locale_defaults_need_update(
+    locale_defaults_path: Path,
+    *,
+    locale: str,
+    language: str,
+    lc_time: str,
+) -> bool:
     current = _read_assignments(locale_defaults_path)
     return (
-        current.get("LANG") != DEFAULT_LOCALE
-        or current.get("LANGUAGE") != "de_DE:de"
-        or current.get("LC_TIME") != DEFAULT_LOCALE
+        current.get("LANG") != locale
+        or current.get("LANGUAGE") != language
+        or current.get("LC_TIME") != lc_time
     )
 
 
@@ -117,26 +159,26 @@ def _current_timezone() -> str | None:
     return None
 
 
-def _set_timezone(*, dry_run: bool, result: FeatureResult) -> bool:
+def _set_timezone(*, timezone: str, dry_run: bool, result: FeatureResult) -> bool:
     current_timezone = _current_timezone()
-    timezone_needs_update = current_timezone != TIMEZONE
+    timezone_needs_update = current_timezone != timezone
     if not timezone_needs_update:
-        result.add_detail(f"Timezone is already set to {TIMEZONE}.")
+        result.add_detail(f"Timezone is already set to {timezone}.")
         return False
 
     if is_systemd_available():
         timedatectl = find_command(["timedatectl"])
-        command = [timedatectl, "set-timezone", TIMEZONE]
+        command = [timedatectl, "set-timezone", timezone]
         if dry_run:
             result.add_detail(f"Would run: {format_command(command)}")
             return True
 
         run_checked(command)
-        result.add_detail(f"Set the system timezone to {TIMEZONE}.")
+        result.add_detail(f"Set the system timezone to {timezone}.")
         return True
 
-    timezone_file_content = normalize_text(TIMEZONE)
-    timezone_target = ZONEINFO_ROOT / TIMEZONE
+    timezone_file_content = normalize_text(timezone)
+    timezone_target = ZONEINFO_ROOT / timezone
     if not timezone_target.exists():
         raise RuntimeError(f"Timezone data file not found: {timezone_target}")
 
@@ -150,7 +192,7 @@ def _set_timezone(*, dry_run: bool, result: FeatureResult) -> bool:
     if localtime_path.exists() or localtime_path.is_symlink():
         localtime_path.unlink()
     localtime_path.symlink_to(timezone_target)
-    result.add_detail(f"Set the system timezone to {TIMEZONE}.")
+    result.add_detail(f"Set the system timezone to {timezone}.")
     return True
 
 
@@ -159,25 +201,37 @@ def configure_timezone_locale(
     dry_run: bool = False,
     locale_gen_path: Path = LOCALE_GEN_PATH,
     keyboard_path: Path = KEYBOARD_PATH,
+    timezone: str = TIMEZONE,
+    locale: str = DEFAULT_LOCALE,
+    language: str = DEFAULT_LANGUAGE,
+    lc_time: str = DEFAULT_LC_TIME,
+    keyboard_model: str = DEFAULT_KEYBOARD_MODEL,
+    keyboard_layout: str = DEFAULT_KEYBOARD_LAYOUT,
+    keyboard_variant: str = DEFAULT_KEYBOARD_VARIANT,
+    keyboard_options: str = DEFAULT_KEYBOARD_OPTIONS,
+    keyboard_backspace: str = DEFAULT_KEYBOARD_BACKSPACE,
 ) -> FeatureResult:
     ensure_linux()
     ensure_root(dry_run=dry_run)
 
+    timezone = _require_non_empty(timezone, name="timezone")
+    locale = _require_non_empty(locale, name="locale")
+    language = _require_non_empty(language, name="language")
+    lc_time = _require_non_empty(lc_time, name="lc_time")
+    keyboard_model = _require_non_empty(keyboard_model, name="keyboard_model")
+    keyboard_layout = _require_non_empty(keyboard_layout, name="keyboard_layout")
+    keyboard_backspace = _require_non_empty(keyboard_backspace, name="keyboard_backspace")
+    locale_gen_entry = _locale_gen_entry(locale)
+    keyboard_content = _keyboard_content(
+        model=keyboard_model,
+        layout=keyboard_layout,
+        variant=keyboard_variant,
+        options=keyboard_options,
+        backspace=keyboard_backspace,
+    )
+
     apt_get, dpkg_query = ensure_apt_system()
     missing_packages = get_missing_packages(SETUP_PACKAGES, dpkg_query_path=dpkg_query)
-
-    locale_defaults_path = _locale_defaults_path()
-    locale_gen_snapshot = capture_snapshot(locale_gen_path)
-    locale_defaults_snapshot = capture_snapshot(locale_defaults_path)
-    keyboard_snapshot = capture_snapshot(keyboard_path)
-    desired_locale_gen = _render_locale_gen(locale_gen_snapshot.content or "")
-    locale_gen_needs_update = desired_locale_gen != (locale_gen_snapshot.content or "")
-    keyboard_needs_update = (
-        not keyboard_snapshot.existed
-        or keyboard_snapshot.content != KEYBOARD_CONTENT
-        or keyboard_snapshot.mode != 0o644
-    )
-    locale_defaults_needs_update = _locale_defaults_need_update(locale_defaults_path)
 
     result = FeatureResult(name="timezone-locale")
 
@@ -207,12 +261,30 @@ def configure_timezone_locale(
             )
             result.changed = True
 
+    locale_defaults_path = _locale_defaults_path()
+    locale_gen_snapshot = capture_snapshot(locale_gen_path)
+    locale_defaults_snapshot = capture_snapshot(locale_defaults_path)
+    keyboard_snapshot = capture_snapshot(keyboard_path)
+    desired_locale_gen = _render_locale_gen(locale_gen_snapshot.content or "", locale=locale)
+    locale_gen_needs_update = desired_locale_gen != (locale_gen_snapshot.content or "")
+    keyboard_needs_update = (
+        not keyboard_snapshot.existed
+        or keyboard_snapshot.content != keyboard_content
+        or keyboard_snapshot.mode != 0o644
+    )
+    locale_defaults_needs_update = _locale_defaults_need_update(
+        locale_defaults_path,
+        locale=locale,
+        language=language,
+        lc_time=lc_time,
+    )
+
     if dry_run:
         if locale_gen_needs_update:
-            result.add_detail(f"Would update {locale_gen_path} to ensure {LOCALE_GEN_ENTRY} is enabled.")
+            result.add_detail(f"Would update {locale_gen_path} to ensure {locale_gen_entry} is enabled.")
             result.changed = True
         else:
-            result.add_detail(f"{locale_gen_path} already enables {LOCALE_GEN_ENTRY}.")
+            result.add_detail(f"{locale_gen_path} already enables {locale_gen_entry}.")
 
         if locale_defaults_needs_update:
             try:
@@ -223,22 +295,22 @@ def configure_timezone_locale(
                 update_locale,
                 "--locale-file",
                 str(locale_defaults_path),
-                f"LANG={DEFAULT_LOCALE}",
-                "LANGUAGE=de_DE:de",
-                f"LC_TIME={DEFAULT_LOCALE}",
+                f"LANG={locale}",
+                f"LANGUAGE={language}",
+                f"LC_TIME={lc_time}",
             ]
             result.add_detail(f"Would run: {format_command(command)}")
             result.changed = True
         else:
-            result.add_detail(f"Default locale already prefers {DEFAULT_LOCALE}.")
+            result.add_detail(f"Default locale already prefers {locale}.")
 
         if keyboard_needs_update:
-            result.add_detail(f"Would write {keyboard_path} for a German QWERTZ console layout.")
+            result.add_detail(f"Would write {keyboard_path} for keyboard layout {keyboard_layout}.")
             result.changed = True
         else:
             result.add_detail(f"{keyboard_path} already has the desired keyboard layout.")
 
-        if _set_timezone(dry_run=True, result=result):
+        if _set_timezone(timezone=timezone, dry_run=True, result=result):
             result.changed = True
 
         try:
@@ -253,14 +325,14 @@ def configure_timezone_locale(
     try:
         if locale_gen_needs_update:
             write_text_if_changed(locale_gen_path, desired_locale_gen, mode=0o644)
-            result.add_detail(f"Updated {locale_gen_path} to enable {LOCALE_GEN_ENTRY}.")
+            result.add_detail(f"Updated {locale_gen_path} to enable {locale_gen_entry}.")
             result.changed = True
         else:
-            result.add_detail(f"{locale_gen_path} already enables {LOCALE_GEN_ENTRY}.")
+            result.add_detail(f"{locale_gen_path} already enables {locale_gen_entry}.")
 
         locale_gen = find_command(["locale-gen"])
         run_checked([locale_gen])
-        result.add_detail(f"Generated locale data for {DEFAULT_LOCALE}.")
+        result.add_detail(f"Generated locale data for {locale}.")
 
         if locale_defaults_needs_update:
             update_locale = find_command(["update-locale"])
@@ -269,24 +341,24 @@ def configure_timezone_locale(
                     update_locale,
                     "--locale-file",
                     str(locale_defaults_path),
-                    f"LANG={DEFAULT_LOCALE}",
-                    "LANGUAGE=de_DE:de",
-                    f"LC_TIME={DEFAULT_LOCALE}",
+                    f"LANG={locale}",
+                    f"LANGUAGE={language}",
+                    f"LC_TIME={lc_time}",
                 ]
             )
             result.add_detail(
-                f"Set the default locale to {DEFAULT_LOCALE} via {locale_defaults_path}."
+                f"Set the default locale to {locale} via {locale_defaults_path}."
             )
             result.changed = True
         else:
-            result.add_detail(f"Default locale already prefers {DEFAULT_LOCALE}.")
+            result.add_detail(f"Default locale already prefers {locale}.")
 
-        if _set_timezone(dry_run=False, result=result):
+        if _set_timezone(timezone=timezone, dry_run=False, result=result):
             result.changed = True
 
         if keyboard_needs_update:
-            write_text_if_changed(keyboard_path, KEYBOARD_CONTENT, mode=0o644)
-            result.add_detail(f"Wrote {keyboard_path} for a German QWERTZ console layout.")
+            write_text_if_changed(keyboard_path, keyboard_content, mode=0o644)
+            result.add_detail(f"Wrote {keyboard_path} for keyboard layout {keyboard_layout}.")
             result.changed = True
         else:
             result.add_detail(f"{keyboard_path} already has the desired keyboard layout.")
@@ -312,12 +384,57 @@ def configure_timezone_locale(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Set Europe/Berlin timezone, German locale, and German QWERTZ keyboard layout.",
+        description="Set timezone, locale, and console keyboard layout.",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Preview the locale and timezone changes without applying them.",
+    )
+    parser.add_argument(
+        "--timezone",
+        default=TIMEZONE,
+        help=f"Timezone to set (default: {TIMEZONE}).",
+    )
+    parser.add_argument(
+        "--locale",
+        default=DEFAULT_LOCALE,
+        help=f"Default locale to generate and set (default: {DEFAULT_LOCALE}).",
+    )
+    parser.add_argument(
+        "--language",
+        default=DEFAULT_LANGUAGE,
+        help=f"LANGUAGE value to set (default: {DEFAULT_LANGUAGE}).",
+    )
+    parser.add_argument(
+        "--lc-time",
+        default=DEFAULT_LC_TIME,
+        help=f"LC_TIME value to set (default: {DEFAULT_LC_TIME}).",
+    )
+    parser.add_argument(
+        "--keyboard-model",
+        default=DEFAULT_KEYBOARD_MODEL,
+        help=f"XKBMODEL value to set (default: {DEFAULT_KEYBOARD_MODEL}).",
+    )
+    parser.add_argument(
+        "--keyboard-layout",
+        default=DEFAULT_KEYBOARD_LAYOUT,
+        help=f"XKBLAYOUT value to set (default: {DEFAULT_KEYBOARD_LAYOUT}).",
+    )
+    parser.add_argument(
+        "--keyboard-variant",
+        default=DEFAULT_KEYBOARD_VARIANT,
+        help="XKBVARIANT value to set.",
+    )
+    parser.add_argument(
+        "--keyboard-options",
+        default=DEFAULT_KEYBOARD_OPTIONS,
+        help="XKBOPTIONS value to set.",
+    )
+    parser.add_argument(
+        "--keyboard-backspace",
+        default=DEFAULT_KEYBOARD_BACKSPACE,
+        help=f"BACKSPACE value to set (default: {DEFAULT_KEYBOARD_BACKSPACE}).",
     )
     return parser
 
@@ -325,7 +442,18 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     try:
-        result = configure_timezone_locale(dry_run=args.dry_run)
+        result = configure_timezone_locale(
+            dry_run=args.dry_run,
+            timezone=args.timezone,
+            locale=args.locale,
+            language=args.language,
+            lc_time=args.lc_time,
+            keyboard_model=args.keyboard_model,
+            keyboard_layout=args.keyboard_layout,
+            keyboard_variant=args.keyboard_variant,
+            keyboard_options=args.keyboard_options,
+            keyboard_backspace=args.keyboard_backspace,
+        )
         print_result(result)
         return 0
     except Exception as exc:  # pragma: no cover - CLI safety net

@@ -25,9 +25,10 @@ from common import (
 
 DEFAULT_BANNER_TEXT = normalize_text(
     """***************************************************************************
-* WARNING: Authorized access only.                                        *
-* Activity on this system may be monitored and logged.                    *
-* Disconnect now if you are not an authorized user.                       *
+* Authorized access only.                                                *
+* If this is not your server, this is your cue to leave.                  *
+* Activity may be monitored, logged, and explained to future you.         *
+* Unauthorized access is not a clever shortcut. Disconnect now.           *
 ***************************************************************************"""
 )
 BANNER_FILE_PATH = Path("/etc/issue.net")

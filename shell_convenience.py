@@ -30,7 +30,10 @@ esac
 export EDITOR=vim
 export VISUAL=vim
 export PAGER=less
+export GIT_PAGER=less
 export LESS=-FRX
+export SYSTEMD_PAGER=cat
+export SYSTEMD_COLORS=1
 export HISTSIZE=50000
 export HISTFILESIZE=100000
 export HISTCONTROL=ignoredups:erasedups
@@ -40,9 +43,19 @@ if [ -n "${BASH_VERSION:-}" ]; then
     shopt -s histappend cmdhist checkwinsize
 
     alias ..='cd ..'
+    alias grep='grep --color=auto'
     alias l='ls -CF --color=auto'
     alias la='ls -A --color=auto'
     alias ll='ls -alF --color=auto'
+    alias df='df -h'
+    alias du='du -h'
+    alias free='free -h'
+    alias ports='ss -tulpn'
+    alias please='sudo'
+
+    bind 'set completion-ignore-case on' 2>/dev/null || true
+    bind 'set show-all-if-ambiguous on' 2>/dev/null || true
+    bind 'set colored-stats on' 2>/dev/null || true
 
     if [ -r /usr/share/bash-completion/bash_completion ]; then
         . /usr/share/bash-completion/bash_completion

@@ -1,6 +1,9 @@
 prep-my-server usr/bin/
+apt_ergonomics.py usr/share/prep-my-server/
 automatic_cleanup.py usr/share/prep-my-server/
+automatic_reboot.py usr/share/prep-my-server/
 common.py usr/share/prep-my-server/
+config.py usr/share/prep-my-server/
 docker_install.py usr/share/prep-my-server/
 fail2ban_setup.py usr/share/prep-my-server/
 logrotate_tuning.py usr/share/prep-my-server/

@@ -18,4 +18,5 @@ Depends:
  python3 (>= 3.10)
 Description: Debian/Ubuntu server preparation helper
  Prepare Debian/Ubuntu servers with baseline packages, locale/timezone,
- maintenance automation, Docker, shell conveniences, Fail2Ban, and SSH tuning.
+ maintenance automation, APT ergonomics, scheduled reboots, Docker,
+ shell conveniences, Fail2Ban, and SSH tuning.
