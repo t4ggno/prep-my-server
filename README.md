@@ -38,6 +38,24 @@ Important notes:
 
 ## Quick start on Linux
 
+If you prefer to browse release assets manually, use:
+
+- <https://github.com/t4ggno/prep-my-server/releases/latest>
+
+### Download the latest standalone Linux binary
+
+If you want the self-contained Linux executable for **amd64 / x86_64** systems:
+
+```bash
+wget -O prep-my-server https://github.com/t4ggno/prep-my-server/releases/latest/download/prep-my-server-linux-amd64
+chmod +x prep-my-server
+
+sudo ./prep-my-server --dry-run
+sudo ./prep-my-server
+```
+
+This is the easiest option when you want a single binary and do not want to install Python first.
+
 ### Run from source
 
 If you want to run directly from the repository:
@@ -68,24 +86,28 @@ If you want a custom SSH banner from a file:
 sudo python3 main.py ssh-login-banner --banner-file ./banner.txt
 ```
 
-### Install from a `.deb` package
+### Install the latest `.deb` package
 
-If you downloaded a packaged release:
+If you want the Debian package from the latest release:
 
 ```bash
-sudo apt install ./prep-my-server_<version>_all.deb
+wget -O prep-my-server.deb https://github.com/t4ggno/prep-my-server/releases/latest/download/prep-my-server.deb
+sudo apt install ./prep-my-server.deb
+
 sudo prep-my-server --dry-run
 sudo prep-my-server
 ```
 
 The installed `prep-my-server` launcher uses the same CLI options as `main.py`.
 
-### Run the zipapp build
+### Download the latest `.pyz` artifact
 
-If you downloaded a `.pyz` release artifact:
+If you prefer the Python zipapp release artifact:
 
 ```bash
+wget -O prep-my-server.pyz https://github.com/t4ggno/prep-my-server/releases/latest/download/prep-my-server.pyz
 chmod +x prep-my-server.pyz
+
 sudo ./prep-my-server.pyz --dry-run
 sudo ./prep-my-server.pyz
 ```

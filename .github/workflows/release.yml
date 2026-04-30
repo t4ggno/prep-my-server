@@ -56,6 +56,10 @@ jobs:
         id: linux_asset
         run: echo "path=dist/prep-my-server-linux-$(dpkg --print-architecture)" >> "${GITHUB_OUTPUT}"
 
+      - name: 📦 Resolve Debian package asset name
+        id: deb_asset
+        run: echo "path=dist/prep-my-server.deb" >> "${GITHUB_OUTPUT}"
+
       - name: 🧪 Compile Python sources
         run: python -m compileall .
 
@@ -77,6 +81,9 @@ jobs:
             --version "${{ steps.meta.outputs.version }}" \
             --maintainer "${DEB_MAINTAINER}"
 
+      - name: 🪄 Rename Debian package release asset
+        run: cp "dist/prep-my-server_${{ steps.meta.outputs.version }}_all.deb" "${{ steps.deb_asset.outputs.path }}"
+
       - name: 🔍 Verify zipapp metadata
         run: python -m zipapp --info dist/prep-my-server.pyz
 
@@ -87,8 +94,8 @@ jobs:
 
       - name: 🧾 Verify Debian package metadata
         run: |
-          dpkg-deb --info "dist/prep-my-server_${{ steps.meta.outputs.version }}_all.deb"
-          dpkg-deb --contents "dist/prep-my-server_${{ steps.meta.outputs.version }}_all.deb" | grep -E './usr/bin/prep-my-server|./usr/share/prep-my-server/main.py'
+          dpkg-deb --info "${{ steps.deb_asset.outputs.path }}"
+          dpkg-deb --contents "${{ steps.deb_asset.outputs.path }}" | grep -E './usr/bin/prep-my-server|./usr/share/prep-my-server/main.py'
 
       - name: ⬆️ Upload release artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -97,7 +104,7 @@ jobs:
           path: |
             dist/prep-my-server.pyz
             ${{ steps.linux_asset.outputs.path }}
-            dist/prep-my-server_${{ steps.meta.outputs.version }}_all.deb
+            ${{ steps.deb_asset.outputs.path }}
           retention-days: 14
 
   release:
