@@ -30,8 +30,10 @@ from config import (
 from docker_install import install_docker
 from docker_log_defaults import configure_docker_log_defaults
 from docker_nightly_restart import configure_docker_nightly_restart
+from docker_prune_timer import configure_docker_prune_timer
 from fail2ban_setup import configure_fail2ban
 from firewall_baseline import configure_firewall_baseline
+from journald_tuning import configure_journald_tuning
 from logrotate_tuning import configure_logrotate_tuning
 from motd_status import configure_motd_status
 from packages_baseline import install_baseline_packages
@@ -53,12 +55,14 @@ TASK_NAMES: tuple[str, ...] = (
     "apt-ergonomics",
     "motd-status",
     "logrotate-tuning",
+    "journald-tuning",
     "sysctl-tuning",
     "fail2ban-setup",
     "automatic-cleanup",
     "automatic-reboot",
     "docker-install",
     "docker-log-defaults",
+    "docker-prune-timer",
     "docker-nightly-restart",
     "shell-convenience",
     "ssh-speedups",
@@ -74,8 +78,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Prepare a Debian/Ubuntu Linux server with baseline packages, locale and timezone, "
             "maintenance automation, scheduled reboots, scheduled Docker restarts, "
-            "APT ergonomics, Docker, "
-            "firewall setup, time sync, shell conveniences, and SSH improvements."
+            "scheduled Docker pruning, APT ergonomics, Docker, firewall setup, "
+            "journald tuning, time sync, shell conveniences, and SSH improvements."
         ),
     )
     parser.add_argument(
@@ -213,6 +217,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--docker-restart-randomized-delay-sec",
         help="systemd RandomizedDelaySec value for docker-nightly-restart, for example: 30m.",
     )
+    parser.add_argument(
+        "--docker-prune-on-calendar",
+        help=(
+            "systemd OnCalendar expression for docker-prune-timer, "
+            "for example: 'Sun *-*-* 05:15:00'."
+        ),
+    )
+    parser.add_argument(
+        "--docker-prune-randomized-delay-sec",
+        help="systemd RandomizedDelaySec value for docker-prune-timer, for example: 1h.",
+    )
+    parser.add_argument(
+        "--docker-prune-until",
+        help="Docker prune until filter for docker-prune-timer, for example: 168h.",
+    )
     return parser
 
 
@@ -343,6 +362,7 @@ def build_tasks(
         "apt-ergonomics": lambda: configure_apt_ergonomics(dry_run=args.dry_run),
         "motd-status": lambda: configure_motd_status(dry_run=args.dry_run),
         "logrotate-tuning": lambda: configure_logrotate_tuning(dry_run=args.dry_run),
+        "journald-tuning": lambda: configure_journald_tuning(dry_run=args.dry_run),
         "sysctl-tuning": lambda: configure_sysctl_tuning(dry_run=args.dry_run),
         "fail2ban-setup": lambda: configure_fail2ban(dry_run=args.dry_run),
         "time-sync": lambda: configure_time_sync(dry_run=args.dry_run),
@@ -367,6 +387,27 @@ def build_tasks(
             add_user_to_docker_group=docker_group_user,
         ),
         "docker-log-defaults": lambda: configure_docker_log_defaults(dry_run=args.dry_run),
+        "docker-prune-timer": lambda: configure_docker_prune_timer(
+            dry_run=args.dry_run,
+            on_calendar=arg_or_setting(
+                args,
+                "docker_prune_on_calendar",
+                config,
+                "docker-prune-timer.on-calendar",
+            ),
+            randomized_delay_sec=arg_or_setting(
+                args,
+                "docker_prune_randomized_delay_sec",
+                config,
+                "docker-prune-timer.randomized-delay-sec",
+            ),
+            prune_until=arg_or_setting(
+                args,
+                "docker_prune_until",
+                config,
+                "docker-prune-timer.prune-until",
+            ),
+        ),
         "docker-nightly-restart": lambda: configure_docker_nightly_restart(
             dry_run=args.dry_run,
             on_calendar=arg_or_setting(

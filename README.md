@@ -11,8 +11,9 @@ It focuses on the boring-but-important first setup steps: packages, locale/timez
 - enables unattended upgrades and smoother APT behavior
 - adds Fail2Ban and safe SSH quality-of-life tweaks
 - installs Docker and applies sane Docker log defaults
-- adds MOTD status, shell conveniences, log rotation, and sysctl tuning
+- adds MOTD status, shell conveniences, log rotation, journald bounds, and sysctl tuning
 - can optionally enable scheduled reboots, nightly Docker restarts, and a conservative firewall baseline
+- enables a safe Docker prune timer that skips when Docker is unavailable and does not prune volumes
 
 ## Best fit
 
@@ -90,9 +91,9 @@ The default full run includes:
 - core packages and baseline server setup
 - timezone, locale, and keyboard configuration
 - time sync, unattended upgrades, and APT quality-of-life tweaks
-- MOTD status, shell conveniences, log rotation, and sysctl tuning
+- MOTD status, shell conveniences, log rotation, journald tuning, and sysctl tuning
 - Fail2Ban, SSH improvements, SSH hardening audit, and sudo session caching
-- Docker installation and Docker log defaults
+- Docker installation, Docker log defaults, and Docker prune scheduling
 
 Disabled by default unless you explicitly enable them:
 
@@ -107,6 +108,8 @@ Built-in defaults:
 - language: `en_US:en`
 - `LC_TIME`: `en_US.UTF-8`
 - keyboard layout: German QWERTZ (`de`)
+- Docker prune timer: weekly, with up to 1 hour randomized delay
+- Docker prune age filter: `until=168h`
 
 When Docker is installed through the full run, `prep-my-server` tries to add the user that invoked `sudo` to the `docker` group. Use `--no-docker-user` if you want Docker to stay root-only.
 
@@ -127,6 +130,7 @@ Pass task names after the command to run only those parts.
 
 - `motd-status`
 - `logrotate-tuning`
+- `journald-tuning`
 - `sysctl-tuning`
 - `shell-convenience`
 
@@ -143,6 +147,7 @@ Pass task names after the command to run only those parts.
 
 - `docker-install`
 - `docker-log-defaults`
+- `docker-prune-timer`
 - `docker-nightly-restart`
 - `automatic-reboot`
 
@@ -188,6 +193,14 @@ Enable nightly Docker restarts:
 ```bash
 sudo prep-my-server --enable docker-nightly-restart
 sudo prep-my-server docker-nightly-restart --dry-run
+```
+
+Change the Docker prune schedule or age filter:
+
+```bash
+sudo prep-my-server --set-config docker-prune-timer.on-calendar 'Sun *-*-* 05:15:00'
+sudo prep-my-server --set-config docker-prune-timer.prune-until 168h
+sudo prep-my-server docker-prune-timer --dry-run
 ```
 
 Enable the conservative firewall baseline:

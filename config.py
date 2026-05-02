@@ -32,6 +32,9 @@ SETTING_DEFAULTS: dict[str, Any] = {
     "automatic-reboot.randomized-delay-sec": "30m",
     "docker-nightly-restart.on-calendar": "*-*-* 04:30:00",
     "docker-nightly-restart.randomized-delay-sec": "30m",
+    "docker-prune-timer.on-calendar": "weekly",
+    "docker-prune-timer.randomized-delay-sec": "1h",
+    "docker-prune-timer.prune-until": "168h",
 }
 BOOLEAN_SETTING_KEYS = {
     "docker-install.auto-sudo-user",

@@ -7,8 +7,10 @@ config.py usr/share/prep-my-server/
 docker_install.py usr/share/prep-my-server/
 docker_log_defaults.py usr/share/prep-my-server/
 docker_nightly_restart.py usr/share/prep-my-server/
+docker_prune_timer.py usr/share/prep-my-server/
 fail2ban_setup.py usr/share/prep-my-server/
 firewall_baseline.py usr/share/prep-my-server/
+journald_tuning.py usr/share/prep-my-server/
 logrotate_tuning.py usr/share/prep-my-server/
 main.py usr/share/prep-my-server/
 motd_status.py usr/share/prep-my-server/
