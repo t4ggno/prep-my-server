@@ -1,4 +1,9 @@
-# prep-my-server
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/logo-dark.svg">
+    <img src="assets/branding/logo.svg" alt="prep-my-server" height="56">
+  </picture>
+</h1>
 
 `prep-my-server` helps you turn a fresh Debian or Ubuntu server into a usable baseline with one command.
 
